@@ -31,3 +31,5 @@
 # Generated reports. Each file is local to one machine.
 reports/
 
+# Emails written locally instead of sent
+.outbox/
