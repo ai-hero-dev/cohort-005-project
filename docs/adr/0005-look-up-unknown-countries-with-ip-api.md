@@ -1,3 +1,7 @@
+---
+status: deprecated
+---
+
 # Look up a buyer's country with ip-api.com when the request does not carry one
 
 Purchasing-power prices depend on the buyer's country. Behind Cloudflare the request carries it in the `CF-IPCountry` header, but not every request comes through Cloudflare. When the header is missing, `resolveCountry` looks up the first `X-Forwarded-For` address on ip-api.com's free endpoint, and only falls back to full price if that lookup fails.
@@ -10,3 +14,7 @@ Purchasing-power prices depend on the buyer's country. Behind Cloudflare the req
 ## Consequences
 
 The course list, the purchase page and every lesson page for a discounted purchase can wait on a network call. The free endpoint is plain HTTP and limited to 45 requests a minute.
+
+## Deprecated
+
+Dropped in "Stop course pages stalling at peak": at peak the ip-api.com lookup rate-limited us and stalled the course list, purchase and lesson pages. `resolveCountry` now reads only the dev override and `CF-IPCountry`, and a request without either is priced at full price (Tier 1). It never calls the network.
