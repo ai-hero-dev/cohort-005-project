@@ -74,7 +74,7 @@ export async function action({ request }: Route.ActionArgs) {
     intent === "approve" ? RefundStatus.Approved : RefundStatus.Declined;
 
   try {
-    const resolved = resolveRefund(refundId, outcome, adminId);
+    const resolved = await resolveRefund(refundId, outcome, adminId);
 
     if (!resolved) {
       return data({ error: "Refund not found." }, { status: 404 });

@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { sendEmail } from "~/lib/mailer.server";
 import { db } from "~/db";
 import {
   RefundStatus,
@@ -75,7 +76,7 @@ export class RefundAlreadyResolvedError extends Error {}
  * RefundAlreadyResolvedError if it has already been decided — the outcome is
  * final, and two Admins may click at once.
  */
-export function resolveRefund(
+export async function resolveRefund(
   refundId: number,
   outcome: RefundStatus.Approved | RefundStatus.Declined,
   adminId: number
@@ -146,7 +147,7 @@ export function resolveRefund(
     amount: result.amount,
   });
 
-  console.log(`[email] to=${email.to} subject=${email.subject}\n${email.body}`);
+  await sendEmail(email);
 
   return result;
 }
