@@ -8,7 +8,7 @@ vi.mock("~/lib/session", () => ({
   })),
 }));
 
-// Mock global fetch for ip-api.com
+// Country resolution must never go to the network.
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
@@ -39,18 +39,12 @@ describe("resolveCountry", () => {
     expect(result).toBe("BR");
   });
 
-  it("falls back to ip-api.com when no dev override and no CF header", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ countryCode: "NG" }),
-    });
+  it("returns null without a dev override or CF header, even with an IP", async () => {
     const result = await resolveCountry(
       makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
     );
-    expect(result).toBe("NG");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://ip-api.com/json/1.2.3.4?fields=countryCode",
-    );
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("returns null when all methods fail", async () => {
@@ -84,50 +78,10 @@ describe("resolveCountry", () => {
     expect(result).toBeNull();
   });
 
-  // ─── ip-api.com Behavior ───
-
-  it("uses first IP from X-Forwarded-For", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ countryCode: "JP" }),
-    });
-    await resolveCountry(
+  it("ignores X-Forwarded-For entirely", async () => {
+    const result = await resolveCountry(
       makeRequest({ "X-Forwarded-For": "1.2.3.4, 5.6.7.8" }),
     );
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://ip-api.com/json/1.2.3.4?fields=countryCode",
-    );
-  });
-
-  it("returns null when ip-api.com returns non-ok response", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false });
-    const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
-    );
-    expect(result).toBeNull();
-  });
-
-  it("returns null when ip-api.com throws (network error)", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("network error"));
-    const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
-    );
-    expect(result).toBeNull();
-  });
-
-  it("returns null when ip-api.com returns no countryCode", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ status: "fail" }),
-    });
-    const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
-    );
-    expect(result).toBeNull();
-  });
-
-  it("skips ip-api.com when no X-Forwarded-For header", async () => {
-    const result = await resolveCountry(makeRequest());
     expect(mockFetch).not.toHaveBeenCalled();
     expect(result).toBeNull();
   });
