@@ -732,10 +732,7 @@ export function declineRefundRequest(
   });
 }
 
-/**
- * The email the buyer gets once their Refund Request is decided. There is no
- * mail transport wired up yet, so callers write it to the server log.
- */
+/** The email the buyer gets once their Refund Request is decided. */
 function buildDecisionEmail(
   db: Queryable,
   purchase: Purchase,
