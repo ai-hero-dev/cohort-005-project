@@ -1,0 +1,29 @@
+.DS_Store
+.env
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+
+# SQLite
+*.db
+*.db-journal
+*.db-wal
+.pnpm-store
+*.db-shm
+.claude/settings.local.json
+
+# JetBrains
+/.idea/
+
+# VS Code
+.vscode/
+
+# request-logger captured logs (may contain your own code/prompts)
+/request-logger/logs/*
+!/request-logger/logs/.gitkeep
+
+# request-logger remembers which agent you chose
+/request-logger/.agent-choice.json
+
