@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  ANALYTICS_RANGES,
+  DEFAULT_ANALYTICS_RANGE,
+  PLATFORM_FEE_PERCENT,
+  PLATFORM_FEE_RATE,
   formatBucket,
   formatMoney,
   rangeStart,
@@ -8,6 +12,44 @@ import {
 } from "./analytics";
 
 describe("analytics config", () => {
+  describe("the platform fee", () => {
+    it("states the same rate as a fraction and as a percentage", () => {
+      // The page prints the percentage beside figures computed from the
+      // fraction. If the two disagree, the page lies about its own sums.
+      expect(PLATFORM_FEE_RATE).toBe(0.2);
+      expect(PLATFORM_FEE_PERCENT).toBe(20);
+    });
+  });
+
+  describe("ANALYTICS_RANGES", () => {
+    it("offers each window, labelled, in the order they are shown", () => {
+      // The label is the only place the length of a window is spelled out for
+      // a reader, so it is pinned here and not left to the eye.
+      expect(ANALYTICS_RANGES).toEqual([
+        { value: "7d", label: "Last 7 days" },
+        { value: "30d", label: "Last 30 days" },
+        { value: "90d", label: "Last 90 days" },
+        { value: "all", label: "All time" },
+      ]);
+    });
+
+    it("labels each day window with the number of days it covers", () => {
+      // Catches the "7d" labelled "Last 9 days" class of typo: the label must
+      // agree with the token beside it.
+      for (const { value, label } of ANALYTICS_RANGES) {
+        if (value === "all") continue;
+        expect(label).toBe(`Last ${value.replace("d", "")} days`);
+      }
+    });
+
+    it("defaults to a window it actually offers", () => {
+      expect(DEFAULT_ANALYTICS_RANGE).toBe("30d");
+      expect(ANALYTICS_RANGES.map((range) => range.value)).toContain(
+        DEFAULT_ANALYTICS_RANGE,
+      );
+    });
+  });
+
   describe("splitRevenue", () => {
     it("splits a round amount into fee and net", () => {
       expect(splitRevenue(10000)).toEqual({
@@ -37,6 +79,11 @@ describe("analytics config", () => {
 
   describe("parseAnalyticsRange", () => {
     it("accepts each offered token", () => {
+      // Driven off the table, so no range can be offered without also being
+      // parseable — including "30d", which the fallback would otherwise hide.
+      for (const { value } of ANALYTICS_RANGES) {
+        expect(parseAnalyticsRange(value)).toBe(value);
+      }
       expect(parseAnalyticsRange("7d")).toBe("7d");
       expect(parseAnalyticsRange("90d")).toBe("90d");
       expect(parseAnalyticsRange("all")).toBe("all");
@@ -90,6 +137,46 @@ describe("analytics config", () => {
 
     it("labels a month bucket", () => {
       expect(formatBucket("2025-11")).toBe("Nov 25");
+    });
+
+    it("names every month", () => {
+      // A chart axis walks the whole year, so every name in the month table
+      // must be correct — not only the two that a spot check happens to hit.
+      const months = [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+      ];
+      expect(months.map((month) => formatBucket(`2026-${month}`))).toEqual([
+        "Jan 26",
+        "Feb 26",
+        "Mar 26",
+        "Apr 26",
+        "May 26",
+        "Jun 26",
+        "Jul 26",
+        "Aug 26",
+        "Sep 26",
+        "Oct 26",
+        "Nov 26",
+        "Dec 26",
+      ]);
+    });
+
+    it("leaves the month empty for a bucket it cannot read", () => {
+      // A bucket with an impossible month degrades to a label with no month
+      // name in it. The axis still renders, and shows no placeholder word.
+      expect(formatBucket("2026-13-05")).toBe("5 ");
+      expect(formatBucket("2026-99")).toBe(" 26");
     });
   });
 });
