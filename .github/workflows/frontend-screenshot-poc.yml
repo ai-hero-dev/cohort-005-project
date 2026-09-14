@@ -66,21 +66,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Update GitHub CLI
-        if: success()
-        run: |
-          # ubuntu-latest's preinstalled gh can lag behind the `--attach`
-          # flag (shipped in gh v2.99.0), so pull the latest from GitHub's
-          # own apt repo rather than assume the runner image has caught up.
-          type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y gh
-          gh --version
-
-      - name: Attach screenshots to the triggering PR, if any
+      - name: Comment on the triggering PR, if any
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,8 +79,12 @@ jobs:
             echo "No open PR for branch '$BRANCH' — screenshots are still available as a workflow artifact above. Skipping PR comment."
             exit 0
           fi
+          # `gh pr comment --attach` looks tempting here, but it rejects the
+          # default GITHUB_TOKEN client-side: Actions issues a GitHub App
+          # installation token (`ghs_...`), and the attachment-upload
+          # endpoint 404s those, so gh's own allowlist refuses them upfront
+          # with "unsupported authentication type" (cli/cli#14309). A
+          # fine-grained/classic PAT would work but isn't worth the extra
+          # secret for a POC -- just point at the artifact instead.
           gh pr comment "$pr_number" \
-            --body "Dashboard screenshots from this run: https://github.com/${GH_REPO}/actions/runs/${{ github.run_id }}" \
-            --attach "screenshots/01-admin-alex-rivera.png#Dashboard, logged in as Alex Rivera (admin)" \
-            --attach "screenshots/02-instructor-sarah-chen.png#Dashboard, logged in as Sarah Chen (instructor)" \
-            --attach "screenshots/03-student-emma-wilson.png#Dashboard, logged in as Emma Wilson (student)"
+            --body "Dashboard screenshots from this run: https://github.com/${GH_REPO}/actions/runs/${{ github.run_id }} (see the \`dashboard-screenshots\` artifact)"
