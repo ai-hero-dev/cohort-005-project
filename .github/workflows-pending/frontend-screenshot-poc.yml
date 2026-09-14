@@ -1,0 +1,100 @@
+name: Frontend Feedback Loop — Dashboard Screenshots (POC)
+
+# Proof of concept for a frontend feedback loop that runs on a controlled
+# Linux box (GitHub Actions) instead of Matt's own machine, mirroring the
+# mutation-testing loop shipped in #1. Manually triggered only: press "Run
+# workflow", it boots the app, logs in as three seeded users (admin,
+# instructor, student) via the app's own DevUI, and screenshots /dashboard
+# for each. See .github/scripts/screenshot-dashboards.sh for the actual
+# browser automation, which uses agent-browser (https://github.com/vercel-labs/agent-browser).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  screenshot-dashboards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migrate and seed the database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Start the dev server
+        run: |
+          nohup npm run dev > /tmp/dev-server.log 2>&1 &
+          echo "Started dev server (pid $!)"
+
+      - name: Install agent-browser
+        run: |
+          npm install -g agent-browser
+          agent-browser install
+          agent-browser install --with-deps
+
+      - name: Take dashboard screenshots as three users
+        env:
+          APP_URL: http://localhost:5173
+          OUT_DIR: screenshots
+        run: bash .github/scripts/screenshot-dashboards.sh
+
+      - name: Show dev server log on failure
+        if: failure()
+        run: cat /tmp/dev-server.log || true
+
+      - name: Upload screenshots as a workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: screenshots
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Update GitHub CLI
+        if: success()
+        run: |
+          # ubuntu-latest's preinstalled gh can lag behind the `--attach`
+          # flag (shipped in gh v2.99.0), so pull the latest from GitHub's
+          # own apt repo rather than assume the runner image has caught up.
+          type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y gh
+          gh --version
+
+      - name: Attach screenshots to the triggering PR, if any
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pr_number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for branch '$BRANCH' — screenshots are still available as a workflow artifact above. Skipping PR comment."
+            exit 0
+          fi
+          gh pr comment "$pr_number" \
+            --body "Dashboard screenshots from this run: https://github.com/${GH_REPO}/actions/runs/${{ github.run_id }}" \
+            --attach "screenshots/01-admin-alex-rivera.png#Dashboard, logged in as Alex Rivera (admin)" \
+            --attach "screenshots/02-instructor-sarah-chen.png#Dashboard, logged in as Sarah Chen (instructor)" \
+            --attach "screenshots/03-student-emma-wilson.png#Dashboard, logged in as Emma Wilson (student)"
