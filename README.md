@@ -44,6 +44,7 @@ The app will be running at `http://localhost:5173`.
 | `npm run build`                | Build for production                   |
 | `npm run test`                 | Run tests with Vitest                  |
 | `npm run test:watch`           | Run tests in watch mode                |
+| `npm run test:mutation`        | Mutation testing (Stryker) on changed files |
 | `npm run typecheck`            | Type-check the project                 |
 | `npm run db:migrate`           | Run database migrations                |
 | `npm run db:seed`              | Seed the database                      |
