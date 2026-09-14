@@ -14,8 +14,8 @@ import {
 describe("analytics config", () => {
   describe("the platform fee", () => {
     it("states the same rate as a fraction and as a percentage", () => {
-      // The page prints the percentage beside figures computed from the
-      // fraction. If the two disagree, the page lies about its own sums.
+      // The page prints the percentage next to amounts that it calculates
+      // from the fraction. The two values must agree.
       expect(PLATFORM_FEE_RATE).toBe(0.2);
       expect(PLATFORM_FEE_PERCENT).toBe(20);
     });
@@ -23,8 +23,8 @@ describe("analytics config", () => {
 
   describe("ANALYTICS_RANGES", () => {
     it("offers each window, labelled, in the order they are shown", () => {
-      // The label is the only place the length of a window is spelled out for
-      // a reader, so it is pinned here and not left to the eye.
+      // The label is the only place that gives the length of a window to a
+      // reader. Pin it here, and do not rely on a visual check.
       expect(ANALYTICS_RANGES).toEqual([
         { value: "7d", label: "Last 7 days" },
         { value: "30d", label: "Last 30 days" },
@@ -34,8 +34,9 @@ describe("analytics config", () => {
     });
 
     it("labels each day window with the number of days it covers", () => {
-      // Catches the "7d" labelled "Last 9 days" class of typo: the label must
-      // agree with the token beside it.
+      // This rule also applies to a range that someone adds later, which the
+      // exact table above cannot do. It finds the error where "7d" has the
+      // label "Last 9 days": the label must agree with its token.
       for (const { value, label } of ANALYTICS_RANGES) {
         if (value === "all") continue;
         expect(label).toBe(`Last ${value.replace("d", "")} days`);
@@ -45,7 +46,7 @@ describe("analytics config", () => {
     it("defaults to a window it actually offers", () => {
       expect(DEFAULT_ANALYTICS_RANGE).toBe("30d");
       expect(ANALYTICS_RANGES.map((range) => range.value)).toContain(
-        DEFAULT_ANALYTICS_RANGE,
+        DEFAULT_ANALYTICS_RANGE
       );
     });
   });
@@ -79,14 +80,12 @@ describe("analytics config", () => {
 
   describe("parseAnalyticsRange", () => {
     it("accepts each offered token", () => {
-      // Driven off the table, so no range can be offered without also being
-      // parseable — including "30d", which the fallback would otherwise hide.
+      // Read from the table, so that a new range cannot be offered unless it
+      // also parses. Note that "30d" is a weak case on its own: the fallback
+      // returns "30d" too, so the exact table above is what pins that entry.
       for (const { value } of ANALYTICS_RANGES) {
         expect(parseAnalyticsRange(value)).toBe(value);
       }
-      expect(parseAnalyticsRange("7d")).toBe("7d");
-      expect(parseAnalyticsRange("90d")).toBe("90d");
-      expect(parseAnalyticsRange("all")).toBe("all");
     });
 
     it("falls back to the default for junk or a missing param", () => {
@@ -140,8 +139,8 @@ describe("analytics config", () => {
     });
 
     it("names every month", () => {
-      // A chart axis walks the whole year, so every name in the month table
-      // must be correct — not only the two that a spot check happens to hit.
+      // A chart axis can show a full year. Thus every name in the month
+      // table must be correct, not only the two that one example uses.
       const months = [
         "01",
         "02",
@@ -173,10 +172,14 @@ describe("analytics config", () => {
     });
 
     it("leaves the month empty for a bucket it cannot read", () => {
-      // A bucket with an impossible month degrades to a label with no month
-      // name in it. The axis still renders, and shows no placeholder word.
-      expect(formatBucket("2026-13-05")).toBe("5 ");
-      expect(formatBucket("2026-99")).toBe(" 26");
+      // A bucket with an impossible month gives a label with no month name
+      // in it. The axis still renders, and shows no placeholder word.
+      //
+      // The specified behaviour is "no month name", not the exact spacing
+      // that the empty name leaves behind. Trim the result, so that this test
+      // does not block a later tidy-up of the padding.
+      expect(formatBucket("2026-13-05").trim()).toBe("5");
+      expect(formatBucket("2026-99").trim()).toBe("26");
     });
   });
 });

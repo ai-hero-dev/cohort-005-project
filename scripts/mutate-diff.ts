@@ -1,24 +1,35 @@
 /**
  * Diff-based mutation testing.
  *
- * A full `stryker run` against every service in `app/services/` takes long
- * enough that nobody — student or agent — actually runs it to "see if this
- * change is any good." This script scopes Stryker down to just the `.ts`
- * files a change has actually touched, so a single `npm run test:mutation`
- * finishes fast enough to sit in a normal verification loop, not a
- * come-back-later batch job.
+ * This script limits Stryker to the files that a change touches. A full run
+ * against every service is too slow to use in a normal verification loop.
  *
- * "Touched" means: committed on this branch since it diverged from `main`,
- * OR sitting uncommitted (staged, unstaged, or a new untracked file) in the
- * working tree right now. That covers both "I finished a PR, mutate what's
- * in it" and "I'm mid-change, mutate what I'm looking at."
+ * A file is "touched" if one of these is true:
+ * - A commit on this branch changed it after the branch left `main`.
+ * - It is staged, unstaged, or untracked in the work tree now.
+ *
+ * See the "Verification checks" section of AGENTS.md for how to read the
+ * result.
  */
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+/**
+ * The top of the repository.
+ *
+ * Git reports each path from this directory, but `existsSync` resolves a
+ * relative path from the current directory. Resolve every path against this
+ * value. If you do not, a run from a subdirectory finds no files and reports
+ * "nothing to mutate", which is a false pass.
+ */
+const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+  encoding: "utf8",
+}).trim();
 
 function git(args: string[]): string[] {
   try {
-    return execFileSync("git", args, { encoding: "utf8" })
+    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" })
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
@@ -28,16 +39,17 @@ function git(args: string[]): string[] {
 }
 
 function findMergeBase(): string | null {
-  // Prefer diffing against the real upstream if this clone has it fetched;
-  // fall back to a local `main` branch; give up gracefully otherwise (e.g.
-  // a shallow clone with no `main` ref at all — everything just falls back
-  // to "uncommitted changes only", which still works).
+  // Use the upstream branch if this clone has it. If not, use a local `main`.
+  // A clone with no `main` at all gets null. The script then examines only
+  // the uncommitted changes, which is still a usable result.
   for (const ref of ["origin/main", "main"]) {
     try {
       execFileSync("git", ["rev-parse", "--verify", ref], {
+        cwd: repoRoot,
         stdio: "ignore",
       });
       return execFileSync("git", ["merge-base", "HEAD", ref], {
+        cwd: repoRoot,
         encoding: "utf8",
       }).trim();
     } catch {
@@ -60,16 +72,16 @@ function changedFiles(): string[] {
     .filter((file) => file.startsWith("app/"))
     .filter((file) => /\.tsx?$/.test(file))
     .filter((file) => !/\.test\.tsx?$/.test(file))
-    .filter((file) => existsSync(file)); // drop deletions
+    .filter((file) => existsSync(resolve(repoRoot, file))); // drop deletions
 }
 
 const files = changedFiles();
 
 if (files.length === 0) {
   console.log(
-    "No changed app/ source files found (checked against origin/main " +
-      "or main, plus anything uncommitted). Nothing to mutate.\n" +
-      "Touch a file under app/services/ (or anywhere else under app/) and run this again.",
+    "No changed app/ source files found (examined against origin/main " +
+      "or main, and all uncommitted changes). There is nothing to mutate.\n" +
+      "Change a file below app/ and run this command again."
   );
   process.exit(0);
 }
@@ -78,6 +90,14 @@ console.log(`Diff-based mutation testing against ${files.length} file(s):`);
 for (const file of files) console.log(`  - ${file}`);
 console.log();
 
-execSync(`npx stryker run --mutate ${files.join(",")}`, {
-  stdio: "inherit",
-});
+// Pass the file list as one argument, not through a shell. A path that
+// contains a space or a shell character must not change the command.
+try {
+  execFileSync("npx", ["stryker", "run", "--mutate", files.join(",")], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+} catch (error) {
+  const status = (error as { status?: number }).status;
+  process.exit(typeof status === "number" ? status : 1);
+}
