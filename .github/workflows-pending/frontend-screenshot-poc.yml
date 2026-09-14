@@ -1,0 +1,90 @@
+name: Frontend Feedback Loop — Dashboard Screenshots (POC)
+
+# Proof of concept for a frontend feedback loop that runs on a controlled
+# Linux box (GitHub Actions) instead of Matt's own machine, mirroring the
+# mutation-testing loop shipped in #1. Manually triggered only: press "Run
+# workflow", it boots the app, logs in as three seeded users (admin,
+# instructor, student) via the app's own DevUI, and screenshots /dashboard
+# for each. See .github/scripts/screenshot-dashboards.sh for the actual
+# browser automation, which uses agent-browser (https://github.com/vercel-labs/agent-browser).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  screenshot-dashboards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migrate and seed the database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Start the dev server
+        run: |
+          nohup npm run dev > /tmp/dev-server.log 2>&1 &
+          echo "Started dev server (pid $!)"
+
+      - name: Install agent-browser
+        run: |
+          npm install -g agent-browser
+          agent-browser install
+          agent-browser install --with-deps
+
+      - name: Take dashboard screenshots as three users
+        env:
+          APP_URL: http://localhost:5173
+          OUT_DIR: screenshots
+        run: bash .github/scripts/screenshot-dashboards.sh
+
+      - name: Show dev server log on failure
+        if: failure()
+        run: cat /tmp/dev-server.log || true
+
+      - name: Upload screenshots as a workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: screenshots
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Comment on the triggering PR, if any
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pr_number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for branch '$BRANCH' — screenshots are still available as a workflow artifact above. Skipping PR comment."
+            exit 0
+          fi
+          # `gh pr comment --attach` looks tempting here, but it rejects the
+          # default GITHUB_TOKEN client-side: Actions issues a GitHub App
+          # installation token (`ghs_...`), and the attachment-upload
+          # endpoint 404s those, so gh's own allowlist refuses them upfront
+          # with "unsupported authentication type" (cli/cli#14309). A
+          # fine-grained/classic PAT would work but isn't worth the extra
+          # secret for a POC -- just point at the artifact instead.
+          gh pr comment "$pr_number" \
+            --body "Dashboard screenshots from this run: https://github.com/${GH_REPO}/actions/runs/${{ github.run_id }} (see the \`dashboard-screenshots\` artifact)"
