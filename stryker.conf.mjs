@@ -26,6 +26,17 @@ const config = {
   // *count* small — a handful of mutants against the full suite is still a
   // "run it and watch" command, not a batch job.
   coverageAnalysis: "off",
+  // Layered on top of the diff-scoped `mutate` below, not instead of it:
+  // `--mutate` already keeps every single run small (a handful of files,
+  // not the whole app/services/ tree), so incremental mode's usual downside
+  // — a slow, un-cached first run — never applies here. What it buys on top:
+  // rerun the same diff after fixing one mutant, and Stryker skips
+  // re-testing the mutants your fix didn't touch, instead of re-running all
+  // of them. Cache lives in `incrementalFile` below, gitignored — it's a
+  // local scratch cache for "keep playing with this diff," not something
+  // meant to be shared across machines or committed.
+  incremental: true,
+  incrementalFile: "reports/stryker-incremental.json",
   // Deliberately NOT mutating the whole `app/` tree here — a full-suite run
   // against ~11 service files takes long enough to be a "come back later"
   // command, not something you run to get a feel for a change. `mutate` is
