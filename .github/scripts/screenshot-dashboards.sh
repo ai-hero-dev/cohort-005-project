@@ -42,6 +42,22 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+# On a fresh checkout (no node_modules/.vite cache -- every CI run) the
+# *first* browser load of the app discovers dependencies Vite hasn't
+# pre-bundled yet. Vite re-optimizes them and pushes a full-page reload over
+# its HMR websocket a moment *after* the initial response finishes loading
+# -- past the point a single `wait --load networkidle` has already
+# resolved. That reload was landing mid-interaction below (every click
+# during the real per-user loop silently no-opped against a page that was
+# about to navigate away), which is what "Element not found" actually was.
+# Absorb the reload here, once, against a throwaway load, instead of
+# fighting it inside the timed loop.
+echo "Priming the Vite dev server (first load may trigger a dependency-optimizer reload)..."
+agent-browser open "$APP_URL/dashboard"
+agent-browser wait --load networkidle
+agent-browser wait 1500
+agent-browser wait --load networkidle
+
 index=1
 for entry in "${USERS[@]}"; do
   name="${entry%%|*}"
