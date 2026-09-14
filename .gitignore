@@ -27,3 +27,8 @@
 # request-logger remembers which agent you chose
 /request-logger/.agent-choice.json
 
+# Stryker mutation-testing scratch + report output
+.stryker-tmp/
+reports/mutation/
+stryker.log
+

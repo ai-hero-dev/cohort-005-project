@@ -1,5 +1,13 @@
 Requests flow **route → service → Drizzle**. Routes own HTTP concerns and rendering; services own data access and use the shared `db` instance directly rather than receiving a handle.
 
+## Verification checks
+
+Before calling a change to `app/` done, run — in this order:
+
+1. `npm run typecheck`
+2. `npm run test`
+3. `npm run test:mutation` — diff-based mutation testing (Stryker), scoped automatically to whatever `.ts`/`.tsx` files under `app/` this change actually touched (committed since `main`, or still sitting uncommitted). A green test suite with a surviving mutant means the tests run, but don't actually pin the behavior down — read a survivor as a review comment on the test, not the implementation, and either strengthen the test or note why the mutant is an accepted unspecified behavior. This is a full `stryker run` scoped down to a handful of files, not the whole `app/services/` tree — it stays fast enough to run every time, not just occasionally.
+
 ## When something breaks
 
 | Symptom                                         | Cause                                                                                                  |
