@@ -58,8 +58,28 @@ for entry in "${USERS[@]}"; do
   agent-browser open "$APP_URL/dashboard"
   agent-browser wait --load networkidle
 
+  # React hydration can lag behind "networkidle" on a loaded CI runner: the
+  # "Switch user" button already exists in the server-rendered HTML before
+  # React attaches its onClick, so the very first click can be a silent
+  # no-op -- no error, the dropdown (which only exists in the DOM once
+  # React's `open` state flips) just never renders. A fixed wait can't tell
+  # the difference between "still hydrating" and "actually open", so poll
+  # for the dropdown's real effect instead, re-clicking if it hasn't
+  # appeared yet.
   agent-browser find role button click --name "Switch user"
-  agent-browser wait 300
+  opened=false
+  for attempt in $(seq 1 10); do
+    if AGENT_BROWSER_DEFAULT_TIMEOUT=1000 agent-browser wait --text "$name" >/dev/null 2>&1; then
+      opened=true
+      break
+    fi
+    agent-browser find role button click --name "Switch user"
+  done
+  if [ "$opened" != "true" ]; then
+    echo "Switch-user dropdown never opened for $name" >&2
+    exit 1
+  fi
+
   agent-browser find text "$name" click --exact
 
   # The switch-user form redirects back to /dashboard and re-runs loaders;
