@@ -42,6 +42,22 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+# On a fresh checkout (no node_modules/.vite cache -- every CI run) the
+# *first* browser load of the app discovers dependencies Vite hasn't
+# pre-bundled yet. Vite re-optimizes them and pushes a full-page reload over
+# its HMR websocket a moment *after* the initial response finishes loading
+# -- past the point a single `wait --load networkidle` has already
+# resolved. That reload was landing mid-interaction below (every click
+# during the real per-user loop silently no-opped against a page that was
+# about to navigate away), which is what "Element not found" actually was.
+# Absorb the reload here, once, against a throwaway load, instead of
+# fighting it inside the timed loop.
+echo "Priming the Vite dev server (first load may trigger a dependency-optimizer reload)..."
+agent-browser open "$APP_URL/dashboard"
+agent-browser wait --load networkidle
+agent-browser wait 1500
+agent-browser wait --load networkidle
+
 index=1
 for entry in "${USERS[@]}"; do
   name="${entry%%|*}"
@@ -58,8 +74,28 @@ for entry in "${USERS[@]}"; do
   agent-browser open "$APP_URL/dashboard"
   agent-browser wait --load networkidle
 
+  # React hydration can lag behind "networkidle" on a loaded CI runner: the
+  # "Switch user" button already exists in the server-rendered HTML before
+  # React attaches its onClick, so the very first click can be a silent
+  # no-op -- no error, the dropdown (which only exists in the DOM once
+  # React's `open` state flips) just never renders. A fixed wait can't tell
+  # the difference between "still hydrating" and "actually open", so poll
+  # for the dropdown's real effect instead, re-clicking if it hasn't
+  # appeared yet.
   agent-browser find role button click --name "Switch user"
-  agent-browser wait 300
+  opened=false
+  for attempt in $(seq 1 10); do
+    if AGENT_BROWSER_DEFAULT_TIMEOUT=1000 agent-browser wait --text "$name" >/dev/null 2>&1; then
+      opened=true
+      break
+    fi
+    agent-browser find role button click --name "Switch user"
+  done
+  if [ "$opened" != "true" ]; then
+    echo "Switch-user dropdown never opened for $name" >&2
+    exit 1
+  fi
+
   agent-browser find text "$name" click --exact
 
   # The switch-user form redirects back to /dashboard and re-runs loaders;
