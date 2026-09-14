@@ -28,7 +28,10 @@ USERS=(
 
 echo "Waiting for $APP_URL to respond..."
 for i in $(seq 1 60); do
-  if curl -sf -o /dev/null "$APP_URL/dashboard"; then
+  # No -f here: /dashboard legitimately 401s until a user is selected, and
+  # -f would treat that as "not ready" and loop until timeout even though
+  # the server answered fine. Any HTTP response at all means it's up.
+  if curl -s -o /dev/null "$APP_URL/dashboard"; then
     echo "App is up."
     break
   fi
