@@ -1,0 +1,6 @@
+{
+  "jsPlugins": ["./scripts/lint-rules/no-adjacent-same-type-params.js"],
+  "rules": {
+    "no-adjacent-same-type-params/no-adjacent-same-type-params": "warn"
+  }
+}
