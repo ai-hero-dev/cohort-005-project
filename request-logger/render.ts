@@ -18,7 +18,7 @@
 import zlib from "node:zlib";
 import type { RendererId } from "./agents";
 
-interface RenderInput {
+type RenderInput = {
   /** Human label for the capture, e.g. "Claude Code" or "Pi (ChatGPT)". */
   agent: string;
   renderer: RendererId;
@@ -32,7 +32,7 @@ interface RenderInput {
   /** The request's content-encoding header, if it had one. */
   requestEncoding?: string;
   responseRaw: string;
-}
+};
 
 const REDACT = new Set([
   "authorization",
@@ -77,10 +77,10 @@ export function decodeRequestBody(body: Buffer, encoding?: string): string {
     if (kind === "gzip") return zlib.gunzipSync(body).toString("utf8");
     if (kind === "br") return zlib.brotliDecompressSync(body).toString("utf8");
     if (kind === "deflate") return zlib.inflateSync(body).toString("utf8");
-  } catch (err) {
+  } catch (error) {
     return decodeFailureWarning(
       body,
-      `this body claims content-encoding "${kind}" but did not decode as that: ${(err as Error).message}`
+      `this body claims content-encoding "${kind}" but did not decode as that: ${(error as Error).message}`
     );
   }
 
@@ -120,7 +120,7 @@ export function renderMarkdown(input: RenderInput): string {
       "<request>\n\n" +
         renderRequest(input, reqJson, requestText) +
         "\n\n</request>",
-      "<response>\n\n" + renderResponse(input, reqJson) + "\n\n</response>",
+      "<response>\n\n" + renderResponse(input) + "\n\n</response>",
     ].join("\n\n") + "\n"
   );
 }
@@ -209,9 +209,9 @@ function renderRequest(
     if (input.renderer === "anthropic") return renderAnthropicRequest(reqJson);
     if (input.renderer === "gemini") return renderGeminiRequest(reqJson);
     return renderOpenAIRequest(reqJson);
-  } catch (err) {
+  } catch (error) {
     return (
-      `<!-- renderer error, showing raw JSON: ${(err as Error).message} -->\n\n` +
+      `<!-- renderer error, showing raw JSON: ${(error as Error).message} -->\n\n` +
       fenceJson(reqJson)
     );
   }
@@ -421,10 +421,10 @@ function renderOpenAITools(tools: any[]): string {
   return ["<tools>", "", rendered.join("\n\n"), "", "</tools>"].join("\n");
 }
 
-function renderOpenAIChatContent(msg: any): string {
+function renderOpenAIChatContent(message: any): string {
   // In chat/completions each element IS the message {role, content, tool_calls}.
   const out: string[] = [];
-  const content = msg.content;
+  const content = message.content;
   if (typeof content === "string") {
     out.push(content);
   } else if (Array.isArray(content)) {
@@ -438,8 +438,8 @@ function renderOpenAIChatContent(msg: any): string {
         .join("\n\n")
     );
   }
-  if (Array.isArray(msg.tool_calls)) {
-    for (const call of msg.tool_calls) {
+  if (Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
       const fn = call.function ?? {};
       out.push(
         [
@@ -452,10 +452,10 @@ function renderOpenAIChatContent(msg: any): string {
       );
     }
   }
-  if (msg.role === "tool") {
+  if (message.role === "tool") {
     out.push(
       [
-        `<tool-result tool-call-id="${msg.tool_call_id ?? ""}">`,
+        `<tool-result tool-call-id="${message.tool_call_id ?? ""}">`,
         "",
         typeof content === "string" ? content : fenceJson(content),
         "",
@@ -596,8 +596,8 @@ function renderGeminiTools(tools: any[]): string {
   return ["<tools>", "", rendered.join("\n\n"), "", "</tools>"].join("\n");
 }
 
-function renderGeminiContent(msg: any): string {
-  return renderGeminiParts(msg?.parts);
+function renderGeminiContent(message: any): string {
+  return renderGeminiParts(message?.parts);
 }
 
 function renderGeminiParts(parts: any): string {
@@ -699,16 +699,16 @@ function renderGeminiResponse(raw: string): string {
 
 function renderMessages(
   messages: any[],
-  renderContent: (msg: any) => string
+  renderContent: (message: any) => string
 ): string {
   if (!Array.isArray(messages)) return "<messages></messages>";
-  const rendered = messages.map((msg, i) => {
-    const role = msg.role ?? msg.type ?? "unknown";
+  const rendered = messages.map((message, i) => {
+    const role = message.role ?? message.type ?? "unknown";
     // Anthropic: content lives on msg.content ; renderContent handles the shape.
     const inner =
       renderContent === renderAnthropicContent
-        ? renderAnthropicContent(msg.content)
-        : renderContent(msg);
+        ? renderAnthropicContent(message.content)
+        : renderContent(message);
     return [
       `<message index="${i + 1}" role="${role}">`,
       "",
@@ -726,7 +726,7 @@ function renderMessages(
 // Response rendering (reassembled from the streamed SSE)
 // ---------------------------------------------------------------------------
 
-function renderResponse(input: RenderInput, reqJson: any): string {
+function renderResponse(input: RenderInput): string {
   const raw = input.responseRaw;
   if (raw.trim().length === 0) return "_(empty response)_";
 
@@ -759,10 +759,10 @@ function renderResponse(input: RenderInput, reqJson: any): string {
     }
     if (input.renderer === "anthropic") return renderAnthropicResponse(raw);
     if (input.renderer === "gemini") return renderGeminiResponse(raw);
-    return renderOpenAIResponse(raw, reqJson);
-  } catch (err) {
+    return renderOpenAIResponse(raw);
+  } catch (error) {
     return (
-      `<!-- response renderer error, showing raw stream: ${(err as Error).message} -->\n\n` +
+      `<!-- response renderer error, showing raw stream: ${(error as Error).message} -->\n\n` +
       fence(raw)
     );
   }
@@ -853,10 +853,11 @@ function renderAnthropicResponse(raw: string): string {
   return parts.join("\n\n");
 }
 
-function renderOpenAIResponse(raw: string, reqJson: any): string {
+function renderOpenAIResponse(raw: string): string {
   const events = sseData(raw);
   const isResponses = events.some(
-    (e) => typeof e.type === "string" && e.type.startsWith("response.")
+    (event) =>
+      typeof event.type === "string" && event.type.startsWith("response.")
   );
 
   if (isResponses) return renderOpenAIResponsesStream(events);
