@@ -21,6 +21,11 @@ import {
 } from "~/db/schema";
 import { isLiveProgress } from "~/lib/enrollments.server";
 
+/** How many users the seed put in the database. */
+function countSeededUsers(): number {
+  return db.select({ id: users.id }).from(users).all().length;
+}
+
 function getAllUsers() {
   return db.select().from(users).all();
 }
@@ -194,9 +199,7 @@ function getUnreadNotificationCount(userId: number) {
   const row = db
     .select({ count: sql<number>`count(*)` })
     .from(notifications)
-    .where(
-      and(eq(notifications.userId, userId), isNull(notifications.readAt))
-    )
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
     .get();
 
   return row?.count ?? 0;
@@ -263,6 +266,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     devCountry,
     countryTierInfo,
     countries: COUNTRIES,
+    seededUserCount: countSeededUsers(),
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
   };
 }
@@ -277,6 +281,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     devCountry,
     countryTierInfo,
     countries,
+    seededUserCount,
     isTeamAdmin: userIsTeamAdmin,
   } = loaderData;
 
@@ -298,6 +303,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         devCountry={devCountry}
         countryTierInfo={countryTierInfo}
         countries={countries}
+        seededUserCount={seededUserCount}
       />
       <Toaster position="bottom-right" richColors closeButton />
     </div>
