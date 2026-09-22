@@ -28,6 +28,10 @@
 # request-logger remembers which agent you chose
 /request-logger/.agent-choice.json
 
+# Screenshots and DOM readouts from the browser loop. Each run overwrites
+# them, and they are local to one machine.
+/screenshots/
+
 # Stryker work files and reports. This includes the result cache of
 # incremental mode (reports/stryker-incremental.json). Each file is local to
 # one machine. Do not share these files, and do not commit them.
