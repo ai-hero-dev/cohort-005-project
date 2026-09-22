@@ -1,7 +1,15 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/dashboard";
-import { getUserEnrolledCourses } from "~/services/enrollmentService";
-import { calculateProgress, getCompletedLessonCount, getTotalLessonCount, getNextIncompleteLesson } from "~/services/progressService";
+import { db } from "~/db";
+import {
+  enrollments,
+  courses,
+  modules,
+  lessons,
+  lessonProgress,
+  LessonProgressStatus,
+} from "~/db/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 import { getCurrentUserId } from "~/lib/session";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
@@ -9,6 +17,169 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { AlertTriangle, BookOpen, CheckCircle2, GraduationCap, PlayCircle } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { data, isRouteErrorResponse } from "react-router";
+
+function getUserEnrolledCourses(userId: number) {
+  return db
+    .select({
+      enrollmentId: enrollments.id,
+      courseId: enrollments.courseId,
+      enrolledAt: enrollments.enrolledAt,
+      completedAt: enrollments.completedAt,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      courseDescription: courses.description,
+      coverImageUrl: courses.coverImageUrl,
+    })
+    .from(enrollments)
+    .innerJoin(courses, eq(enrollments.courseId, courses.id))
+    .where(eq(enrollments.userId, userId))
+    .all();
+}
+
+function getCourseLessonIds(courseId: number): number[] {
+  const courseModules = db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .all();
+
+  if (courseModules.length === 0) return [];
+
+  const courseLessons = db
+    .select({ id: lessons.id })
+    .from(lessons)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .all();
+
+  return courseLessons.map((l) => l.id);
+}
+
+function getLessonProgress(userId: number, lessonId: number) {
+  return db
+    .select()
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.lessonId, lessonId)
+      )
+    )
+    .get();
+}
+
+function calculateProgress(
+  userId: number,
+  courseId: number,
+  weightByDuration: boolean
+) {
+  const lessonIds = getCourseLessonIds(courseId);
+
+  if (lessonIds.length === 0) return 0;
+
+  if (weightByDuration) {
+    const courseLessons = db
+      .select({
+        id: lessons.id,
+        durationMinutes: lessons.durationMinutes,
+      })
+      .from(lessons)
+      .where(or(...lessonIds.map((id) => eq(lessons.id, id)))!)
+      .all();
+
+    const totalDuration = courseLessons.reduce(
+      (sum, l) => sum + (l.durationMinutes ?? 1),
+      0
+    );
+
+    if (totalDuration === 0) return 0;
+
+    const completed = db
+      .select()
+      .from(lessonProgress)
+      .where(
+        and(
+          eq(lessonProgress.userId, userId),
+          eq(lessonProgress.status, LessonProgressStatus.Completed),
+          or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+        )
+      )
+      .all();
+
+    const completedIds = new Set(completed.map((p) => p.lessonId));
+
+    const completedDuration = courseLessons
+      .filter((l) => completedIds.has(l.id))
+      .reduce((sum, l) => sum + (l.durationMinutes ?? 1), 0);
+
+    return Math.round((completedDuration / totalDuration) * 100);
+  }
+
+  const completedCount = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, LessonProgressStatus.Completed),
+        or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+      )
+    )
+    .get();
+
+  return Math.round(((completedCount?.count ?? 0) / lessonIds.length) * 100);
+}
+
+function getCompletedLessonCount(userId: number, courseId: number) {
+  const lessonIds = getCourseLessonIds(courseId);
+  if (lessonIds.length === 0) return 0;
+
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, LessonProgressStatus.Completed),
+        or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+      )
+    )
+    .get();
+
+  return result?.count ?? 0;
+}
+
+function getTotalLessonCount(courseId: number) {
+  return getCourseLessonIds(courseId).length;
+}
+
+function getNextIncompleteLesson(userId: number, courseId: number) {
+  const courseModules = db
+    .select()
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .orderBy(modules.position)
+    .all();
+
+  if (courseModules.length === 0) return null;
+
+  for (const mod of courseModules) {
+    const moduleLessons = db
+      .select()
+      .from(lessons)
+      .where(eq(lessons.moduleId, mod.id))
+      .orderBy(lessons.position)
+      .all();
+
+    for (const lesson of moduleLessons) {
+      const progress = getLessonProgress(userId, lesson.id);
+      if (!progress || progress.status !== LessonProgressStatus.Completed) {
+        return lesson;
+      }
+    }
+  }
+
+  return null;
+}
 
 export function meta() {
   return [

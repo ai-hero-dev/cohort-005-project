@@ -1,10 +1,5 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/instructor.$courseId.students";
-import { getCourseById } from "~/services/courseService";
-import { getCourseEnrolledStudents } from "~/services/enrollmentService";
-import { getUserById } from "~/services/userService";
-import { calculateProgress } from "~/services/progressService";
-import { getQuizByLessonId, getBestAttempt } from "~/services/quizService";
 import { getCurrentUserId } from "~/lib/session";
 import { UserRole } from "~/db/schema";
 import { Card, CardContent } from "~/components/ui/card";
@@ -12,8 +7,135 @@ import { Button } from "~/components/ui/button";
 import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { db } from "~/db";
-import { modules, lessons } from "~/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  modules,
+  lessons,
+  users,
+  courses,
+  enrollments,
+  quizzes,
+  quizAttempts,
+  lessonProgress,
+  LessonProgressStatus,
+} from "~/db/schema";
+import { eq, and, or, sql, desc } from "drizzle-orm";
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function getCourseById(id: number) {
+  return db.select().from(courses).where(eq(courses.id, id)).get();
+}
+
+function getCourseEnrolledStudents(courseId: number) {
+  return db
+    .select({
+      enrollmentId: enrollments.id,
+      userId: enrollments.userId,
+      enrolledAt: enrollments.enrolledAt,
+      completedAt: enrollments.completedAt,
+    })
+    .from(enrollments)
+    .where(eq(enrollments.courseId, courseId))
+    .all();
+}
+
+function getQuizByLessonId(lessonId: number) {
+  return db.select().from(quizzes).where(eq(quizzes.lessonId, lessonId)).get();
+}
+
+function getBestAttempt(userId: number, quizId: number) {
+  return db
+    .select()
+    .from(quizAttempts)
+    .where(
+      and(eq(quizAttempts.userId, userId), eq(quizAttempts.quizId, quizId))
+    )
+    .orderBy(desc(quizAttempts.score))
+    .limit(1)
+    .get();
+}
+
+function getCourseLessonIds(courseId: number): number[] {
+  const courseModules = db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .all();
+
+  if (courseModules.length === 0) return [];
+
+  const courseLessons = db
+    .select({ id: lessons.id })
+    .from(lessons)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .all();
+
+  return courseLessons.map((l) => l.id);
+}
+
+function calculateProgress(
+  userId: number,
+  courseId: number,
+  weightByDuration: boolean
+) {
+  const lessonIds = getCourseLessonIds(courseId);
+
+  if (lessonIds.length === 0) return 0;
+
+  if (weightByDuration) {
+    const courseLessons = db
+      .select({
+        id: lessons.id,
+        durationMinutes: lessons.durationMinutes,
+      })
+      .from(lessons)
+      .where(or(...lessonIds.map((id) => eq(lessons.id, id)))!)
+      .all();
+
+    const totalDuration = courseLessons.reduce(
+      (sum, l) => sum + (l.durationMinutes ?? 1),
+      0
+    );
+
+    if (totalDuration === 0) return 0;
+
+    const completed = db
+      .select()
+      .from(lessonProgress)
+      .where(
+        and(
+          eq(lessonProgress.userId, userId),
+          eq(lessonProgress.status, LessonProgressStatus.Completed),
+          or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+        )
+      )
+      .all();
+
+    const completedIds = new Set(completed.map((p) => p.lessonId));
+
+    const completedDuration = courseLessons
+      .filter((l) => completedIds.has(l.id))
+      .reduce((sum, l) => sum + (l.durationMinutes ?? 1), 0);
+
+    return Math.round((completedDuration / totalDuration) * 100);
+  }
+
+  const completedCount = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, LessonProgressStatus.Completed),
+        or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+      )
+    )
+    .get();
+
+  return Math.round(((completedCount?.count ?? 0) / lessonIds.length) * 100);
+}
 
 export function meta({ loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Student Roster";
@@ -34,7 +156,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const user = getUserById(currentUserId);
 
-  if (!user || (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)) {
+  if (
+    !user ||
+    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
+  ) {
     throw data("Only instructors and admins can access this page.", {
       status: 403,
     });
@@ -79,7 +204,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   // Find which lessons have quizzes
-  const lessonQuizzes: { lessonId: number; lessonTitle: string; quizId: number; quizTitle: string }[] = [];
+  const lessonQuizzes: {
+    lessonId: number;
+    lessonTitle: string;
+    quizId: number;
+    quizTitle: string;
+  }[] = [];
   for (const lesson of allCourseLessons) {
     const quiz = getQuizByLessonId(lesson.id);
     if (quiz) {
@@ -139,9 +269,7 @@ function progressBar(progress: number) {
 
 function quizScoreBadge(score: number | null, passed: boolean | null) {
   if (score === null) {
-    return (
-      <span className="text-xs text-muted-foreground">—</span>
-    );
+    return <span className="text-xs text-muted-foreground">—</span>;
   }
 
   const percentage = Math.round(score * 100);
@@ -174,10 +302,7 @@ export default function InstructorStudentRoster({
           My Courses
         </Link>
         <span className="mx-2">/</span>
-        <Link
-          to={`/instructor/${course.id}`}
-          className="hover:text-foreground"
-        >
+        <Link to={`/instructor/${course.id}`} className="hover:text-foreground">
           {course.title}
         </Link>
         <span className="mx-2">/</span>
@@ -324,18 +449,26 @@ export default function InstructorStudentRoster({
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let title = "Something went wrong";
-  let message = "An unexpected error occurred while loading the student roster.";
+  let message =
+    "An unexpected error occurred while loading the student roster.";
 
   if (isRouteErrorResponse(error)) {
     if (error.status === 404) {
       title = "Course not found";
-      message = "The course you're looking for doesn't exist or may have been removed.";
+      message =
+        "The course you're looking for doesn't exist or may have been removed.";
     } else if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
       title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "You don't have permission to view this roster.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "You don't have permission to view this roster.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

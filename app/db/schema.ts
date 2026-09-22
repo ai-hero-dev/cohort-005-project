@@ -62,7 +62,7 @@ export const courses = sqliteTable("courses", {
   slug: text("slug").notNull().unique(),
   description: text("description").notNull(),
   notes: text("notes"),
-  // Markdown, non-empty. Enforced in courseService.
+  // Markdown, non-empty. Enforced on write.
   salesCopy: text("sales_copy").notNull(),
   instructorId: integer("instructor_id")
     .notNull()
@@ -273,7 +273,7 @@ export const courseRatings = sqliteTable(
     courseId: integer("course_id")
       .notNull()
       .references(() => courses.id),
-    // Whole stars, 1–5. Enforced in courseRatingService.
+    // Whole stars, 1–5. Enforced on write.
     rating: integer("rating").notNull(),
     createdAt: text("created_at")
       .notNull()
@@ -301,11 +301,11 @@ export const comments = sqliteTable(
       .notNull()
       .references(() => users.id),
     // Null for a top-level comment. Replies are one level deep only — a parent
-    // must itself be top-level. Enforced in commentService.
+    // must itself be top-level. Enforced on write.
     parentId: integer("parent_id").references(
       (): AnySQLiteColumn => comments.id
     ),
-    // Markdown, 1–5000 chars. Enforced in commentService, rendered by
+    // Markdown, 1–5000 chars. Enforced on write, rendered by
     // renderComment (untrusted input — never renderMarkdown).
     body: text("body").notNull(),
     createdAt: text("created_at")

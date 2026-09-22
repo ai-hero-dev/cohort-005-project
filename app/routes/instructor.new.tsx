@@ -3,12 +3,12 @@ import { Link, redirect, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/instructor.new";
-import { createCourse, getCourseBySlug } from "~/services/courseService";
-import { getAllCategories, slugify as generateSlug } from "~/services/categoryService";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById } from "~/services/userService";
 import { parseFormData } from "~/lib/validation";
 import { UserRole } from "~/db/schema";
+import { db } from "~/db";
+import { users, categories, courses, CourseStatus } from "~/db/schema";
+import { eq } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -23,6 +23,54 @@ import {
 } from "~/components/ui/select";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function getAllCategories() {
+  return db.select().from(categories).orderBy(categories.name).all();
+}
+
+function generateSlug(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function getCourseBySlug(slug: string) {
+  return db.select().from(courses).where(eq(courses.slug, slug)).get();
+}
+
+function createCourse(
+  title: string,
+  slug: string,
+  description: string,
+  salesCopy: string,
+  instructorId: number,
+  categoryId: number,
+  coverImageUrl: string | null
+) {
+  if (salesCopy.trim().length === 0) {
+    throw new Error("Sales copy cannot be empty");
+  }
+
+  return db
+    .insert(courses)
+    .values({
+      title,
+      slug,
+      description,
+      salesCopy,
+      instructorId,
+      categoryId,
+      status: CourseStatus.Draft,
+      coverImageUrl,
+    })
+    .returning()
+    .get();
+}
 
 const newCourseSchema = z.object({
   title: z.string().trim().min(1, "Title is required."),
@@ -89,7 +137,11 @@ export async function action({ request }: Route.ActionArgs) {
   const existingCourse = getCourseBySlug(slug);
   if (existingCourse) {
     return data(
-      { errors: { title: "A course with a similar title already exists." } as Record<string, string> },
+      {
+        errors: {
+          title: "A course with a similar title already exists.",
+        } as Record<string, string>,
+      },
       { status: 400 }
     );
   }
@@ -147,8 +199,8 @@ export default function InstructorNewCourse({
         </Link>
         <h1 className="text-3xl font-bold">Create New Course</h1>
         <p className="mt-1 text-muted-foreground">
-          Fill in the details below to create a new course. It will be saved as a
-          draft.
+          Fill in the details below to create a new course. It will be saved as
+          a draft.
         </p>
       </div>
 
@@ -186,9 +238,7 @@ export default function InstructorNewCourse({
                 aria-invalid={errors?.description ? true : undefined}
               />
               {errors?.description && (
-                <p className="text-sm text-destructive">
-                  {errors.description}
-                </p>
+                <p className="text-sm text-destructive">{errors.description}</p>
               )}
             </div>
 
@@ -215,8 +265,14 @@ export default function InstructorNewCourse({
             <div className="space-y-2">
               <Label htmlFor="categoryId">Category</Label>
               <input type="hidden" name="categoryId" value={selectedCategory} />
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-full" aria-invalid={errors?.categoryId ? true : undefined}>
+              <Select
+                value={selectedCategory}
+                onValueChange={setSelectedCategory}
+              >
+                <SelectTrigger
+                  className="w-full"
+                  aria-invalid={errors?.categoryId ? true : undefined}
+                >
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,9 +284,7 @@ export default function InstructorNewCourse({
                 </SelectContent>
               </Select>
               {errors?.categoryId && (
-                <p className="text-sm text-destructive">
-                  {errors.categoryId}
-                </p>
+                <p className="text-sm text-destructive">{errors.categoryId}</p>
               )}
             </div>
 
@@ -275,10 +329,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
       title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "You don't have permission to access this page.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "You don't have permission to access this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

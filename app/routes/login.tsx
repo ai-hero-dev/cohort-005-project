@@ -2,12 +2,14 @@ import { Form, Link, useActionData, useNavigation, useSearchParams } from "react
 import { redirect, data } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/login";
-import { getUserByEmail } from "~/services/userService";
 import { setCurrentUserId, getCurrentUserId } from "~/lib/session";
 import { parseFormData } from "~/lib/validation";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Card, CardContent } from "~/components/ui/card";
+import { db } from "~/db";
+import { users } from "~/db/schema";
+import { eq } from "drizzle-orm";
 
 const loginSchema = z.object({
   email: z
@@ -48,7 +50,7 @@ export async function action({ request, url }: Route.ActionArgs) {
 
   const { email } = parsed.data;
 
-  const user = getUserByEmail(email);
+  const user = db.select().from(users).where(eq(users.email, email)).get();
   if (!user) {
     return data(
       {

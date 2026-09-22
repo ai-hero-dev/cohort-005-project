@@ -1,3 +1,0 @@
-interface:
-  display_name: "Adding a Route"
-  short_description: "Create a route module and register it in the route table"

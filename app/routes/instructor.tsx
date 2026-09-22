@@ -1,16 +1,67 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/instructor";
-import { getCoursesByInstructor, getLessonCountForCourse } from "~/services/courseService";
-import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById } from "~/services/userService";
-import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { AlertTriangle, BookOpen, GraduationCap, Plus, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  GraduationCap,
+  Plus,
+  Users,
+} from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { data, isRouteErrorResponse } from "react-router";
 import { CourseStatus, UserRole } from "~/db/schema";
+import { db } from "~/db";
+import { users, courses, modules, lessons, enrollments } from "~/db/schema";
+import { eq, or, sql } from "drizzle-orm";
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function getCoursesByInstructor(instructorId: number) {
+  return db
+    .select()
+    .from(courses)
+    .where(eq(courses.instructorId, instructorId))
+    .all();
+}
+
+function getLessonCountForCourse(courseId: number) {
+  const courseModules = db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .all();
+
+  if (courseModules.length === 0) return 0;
+
+  const count = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessons)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .get();
+
+  return count?.count ?? 0;
+}
+
+function getEnrollmentCountForCourse(courseId: number) {
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(eq(enrollments.courseId, courseId))
+    .get();
+
+  return result?.count ?? 0;
+}
 
 export function meta() {
   return [
@@ -166,8 +217,14 @@ export default function InstructorDashboard({
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((course) => (
-            <Card key={course.id} className="flex flex-col overflow-hidden pt-0">
-              <Link to={`/courses/${course.slug}`} className="aspect-video overflow-hidden">
+            <Card
+              key={course.id}
+              className="flex flex-col overflow-hidden pt-0"
+            >
+              <Link
+                to={`/courses/${course.slug}`}
+                className="aspect-video overflow-hidden"
+              >
                 <CourseImage
                   src={course.coverImageUrl}
                   alt={course.title}
@@ -229,10 +286,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
       title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "You don't have permission to access this page.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "You don't have permission to access this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

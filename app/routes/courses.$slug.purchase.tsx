@@ -3,18 +3,24 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/courses.$slug.purchase";
-import {
-  getCourseBySlug,
-  getCourseWithDetails,
-  getLessonCountForCourse,
-} from "~/services/courseService";
-import {
-  isUserEnrolled,
-  enrollUser,
-  getEnrollmentCountForCourse,
-} from "~/services/enrollmentService";
 import { getCurrentUserId } from "~/lib/session";
-import { CourseStatus } from "~/db/schema";
+import { db } from "~/db";
+import {
+  courses,
+  categories,
+  users,
+  modules,
+  lessons,
+  enrollments,
+  purchases,
+  teams,
+  teamMembers,
+  coupons,
+  CourseStatus,
+  TeamMemberRole,
+} from "~/db/schema";
+import { eq, and, or, sql } from "drizzle-orm";
+import crypto from "crypto";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import {
@@ -31,8 +37,223 @@ import { data } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
-import { createPurchase, createTeamPurchase } from "~/services/purchaseService";
 import { parseFormData, parseParams } from "~/lib/validation";
+
+function getCourseBySlug(slug: string) {
+  return db.select().from(courses).where(eq(courses.slug, slug)).get();
+}
+
+function getCourseWithDetails(id: number) {
+  const course = db
+    .select({
+      id: courses.id,
+      title: courses.title,
+      slug: courses.slug,
+      description: courses.description,
+      salesCopy: courses.salesCopy,
+      instructorId: courses.instructorId,
+      categoryId: courses.categoryId,
+      status: courses.status,
+      coverImageUrl: courses.coverImageUrl,
+      price: courses.price,
+      pppEnabled: courses.pppEnabled,
+      createdAt: courses.createdAt,
+      updatedAt: courses.updatedAt,
+      instructorName: users.name,
+      instructorAvatarUrl: users.avatarUrl,
+      instructorBio: users.bio,
+      categoryName: categories.name,
+    })
+    .from(courses)
+    .innerJoin(users, eq(courses.instructorId, users.id))
+    .innerJoin(categories, eq(courses.categoryId, categories.id))
+    .where(eq(courses.id, id))
+    .get();
+
+  if (!course) return null;
+
+  const courseModules = db
+    .select()
+    .from(modules)
+    .where(eq(modules.courseId, id))
+    .orderBy(modules.position)
+    .all();
+
+  const moduleIds = courseModules.map((m) => m.id);
+
+  const courseLessons =
+    moduleIds.length > 0
+      ? db
+          .select()
+          .from(lessons)
+          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid)))!)
+          .orderBy(lessons.position)
+          .all()
+      : [];
+
+  return {
+    ...course,
+    modules: courseModules.map((mod) => ({
+      ...mod,
+      lessons: courseLessons.filter((l) => l.moduleId === mod.id),
+    })),
+  };
+}
+
+function getLessonCountForCourse(courseId: number) {
+  const courseModules = db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .all();
+
+  if (courseModules.length === 0) return 0;
+
+  const count = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessons)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .get();
+
+  return count?.count ?? 0;
+}
+
+function findEnrollment(userId: number, courseId: number) {
+  return db
+    .select()
+    .from(enrollments)
+    .where(
+      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+    )
+    .get();
+}
+
+function isUserEnrolled(userId: number, courseId: number) {
+  return !!findEnrollment(userId, courseId);
+}
+
+function getEnrollmentCountForCourse(courseId: number) {
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(eq(enrollments.courseId, courseId))
+    .get();
+
+  return result?.count ?? 0;
+}
+
+function enrollUser(
+  userId: number,
+  courseId: number,
+  sendEmail: boolean,
+  skipValidation: boolean
+) {
+  if (!skipValidation) {
+    const existing = findEnrollment(userId, courseId);
+    if (existing) {
+      throw new Error("User is already enrolled in this course");
+    }
+
+    const course = db
+      .select()
+      .from(courses)
+      .where(eq(courses.id, courseId))
+      .get();
+    if (!course) {
+      throw new Error("Course not found");
+    }
+  }
+
+  const enrollment = db
+    .insert(enrollments)
+    .values({ userId, courseId })
+    .returning()
+    .get();
+
+  if (sendEmail) {
+    // Would send welcome email here
+  }
+
+  return enrollment;
+}
+
+function createPurchase(
+  userId: number,
+  courseId: number,
+  amountPaid: number,
+  country: string | null
+) {
+  return db
+    .insert(purchases)
+    .values({ userId, courseId, amountPaid, country })
+    .returning()
+    .get();
+}
+
+function getTeamForAdmin(userId: number) {
+  const membership = db
+    .select()
+    .from(teamMembers)
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.role, TeamMemberRole.Admin)
+      )
+    )
+    .get();
+
+  if (!membership) return undefined;
+
+  return db.select().from(teams).where(eq(teams.id, membership.teamId)).get();
+}
+
+function getOrCreateTeamForUser(userId: number) {
+  const existingTeam = getTeamForAdmin(userId);
+  if (existingTeam) return existingTeam;
+
+  const team = db.insert(teams).values({}).returning().get();
+  db.insert(teamMembers)
+    .values({ teamId: team.id, userId, role: TeamMemberRole.Admin })
+    .returning()
+    .get();
+  return team;
+}
+
+function generateCoupons(
+  teamId: number,
+  courseId: number,
+  purchaseId: number,
+  quantity: number
+) {
+  const created: (typeof coupons.$inferSelect)[] = [];
+  for (let i = 0; i < quantity; i++) {
+    const coupon = db
+      .insert(coupons)
+      .values({
+        teamId,
+        courseId,
+        code: crypto.randomBytes(12).toString("base64url"),
+        purchaseId,
+      })
+      .returning()
+      .get();
+    created.push(coupon);
+  }
+  return created;
+}
+
+function createTeamPurchase(
+  userId: number,
+  courseId: number,
+  amountPaid: number,
+  country: string | null,
+  quantity: number
+) {
+  const purchase = createPurchase(userId, courseId, amountPaid, country);
+  const team = getOrCreateTeamForUser(userId);
+  const teamCoupons = generateCoupons(team.id, courseId, purchase.id, quantity);
+  return { purchase, team, coupons: teamCoupons };
+}
 
 const purchaseParamsSchema = z.object({
   slug: z.string().min(1),

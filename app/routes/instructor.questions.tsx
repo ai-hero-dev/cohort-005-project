@@ -3,16 +3,7 @@ import { Link, data, isRouteErrorResponse, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/instructor.questions";
-import {
-  requireInstructorOrAdmin,
-  requireStaff,
-} from "~/lib/access.server";
-import {
-  getUnansweredQuestions,
-  getCommentById,
-  getCourseForLesson,
-  createComment,
-} from "~/services/commentService";
+import { requireInstructorOrAdmin, requireStaff } from "~/lib/access.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -21,16 +12,149 @@ import { Textarea } from "~/components/ui/textarea";
 import { UserAvatar } from "~/components/user-avatar";
 import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
-import { MAX_COMMENT_LENGTH } from "~/lib/comments";
+import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { parseFormData } from "~/lib/validation";
+import { db } from "~/db";
+import {
+  comments,
+  courses,
+  lessons,
+  modules,
+  users,
+  UserRole,
+} from "~/db/schema";
+import { eq, ne, or, and, isNull, notExists, sql, desc } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
-// ─── Unanswered Questions Queue ───
-// The instructor-side half of lesson comments. Without it, a question posted on
-// lesson 34 of module 6 is invisible unless someone happens to revisit that
-// lesson — which is how a Q&A feature quietly becomes a list of things nobody
-// ever answered.
-//
-// "Unanswered" is derived, not stored: see commentService.getUnansweredQuestions.
+type QueuedQuestion = {
+  id: number;
+  body: string;
+  createdAt: string;
+  lessonId: number;
+  lessonTitle: string;
+  courseTitle: string;
+  courseSlug: string;
+  authorId: number;
+  authorName: string;
+  authorAvatarUrl: string | null;
+};
+
+function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
+  const author = alias(users, "author");
+  const reply = alias(comments, "reply");
+  const replyAuthor = alias(users, "reply_author");
+
+  // Correlated: matches a live reply, by staff, to the outer question.
+  const staffReply = db
+    .select({ one: sql`1` })
+    .from(reply)
+    .innerJoin(replyAuthor, eq(replyAuthor.id, reply.userId))
+    .where(
+      and(
+        eq(reply.parentId, comments.id),
+        isNull(reply.deletedAt),
+        or(
+          eq(replyAuthor.role, UserRole.Admin),
+          eq(reply.userId, courses.instructorId)
+        )
+      )
+    );
+
+  const conditions = [
+    isNull(comments.parentId),
+    isNull(comments.deletedAt),
+    // Staff asking their own question shouldn't queue up as work for themselves.
+    ne(author.role, UserRole.Admin),
+    ne(comments.userId, courses.instructorId),
+    notExists(staffReply),
+  ];
+
+  if (instructorId !== null) {
+    conditions.push(eq(courses.instructorId, instructorId));
+  }
+
+  return db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      createdAt: comments.createdAt,
+      lessonId: lessons.id,
+      lessonTitle: lessons.title,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      authorId: author.id,
+      authorName: author.name,
+      authorAvatarUrl: author.avatarUrl,
+    })
+    .from(comments)
+    .innerJoin(author, eq(comments.userId, author.id))
+    .innerJoin(lessons, eq(comments.lessonId, lessons.id))
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .innerJoin(courses, eq(modules.courseId, courses.id))
+    .where(and(...conditions))
+    .orderBy(desc(comments.createdAt), desc(comments.id))
+    .all();
+}
+
+function getCommentById(commentId: number) {
+  return db.select().from(comments).where(eq(comments.id, commentId)).get();
+}
+
+function getCourseForLesson(lessonId: number) {
+  return db
+    .select({
+      courseId: courses.id,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      instructorId: courses.instructorId,
+    })
+    .from(lessons)
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .innerJoin(courses, eq(modules.courseId, courses.id))
+    .where(eq(lessons.id, lessonId))
+    .get();
+}
+
+function createComment(
+  userId: number,
+  lessonId: number,
+  parentId: number | null,
+  body: string
+) {
+  const trimmed = body.trim();
+  if (trimmed.length < MIN_COMMENT_LENGTH) {
+    throw new Error("Comment cannot be empty");
+  }
+  if (trimmed.length > MAX_COMMENT_LENGTH) {
+    throw new Error(
+      `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`
+    );
+  }
+
+  const course = getCourseForLesson(lessonId);
+  if (!course) {
+    throw new Error("Lesson not found");
+  }
+
+  if (parentId !== null) {
+    const parent = getCommentById(parentId);
+    if (!parent) {
+      throw new Error("Parent comment not found");
+    }
+    if (parent.lessonId !== lessonId) {
+      throw new Error("Parent comment belongs to a different lesson");
+    }
+    if (parent.parentId !== null) {
+      throw new Error("Replies can only be one level deep");
+    }
+  }
+
+  return db
+    .insert(comments)
+    .values({ userId, lessonId, parentId, body: trimmed })
+    .returning()
+    .get();
+}
 
 // A question sitting this long without an answer gets called out visually.
 const STALE_AFTER_DAYS = 3;

@@ -2,22 +2,22 @@ import { useState } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/instructor.$courseId.lessons.$lessonId.quiz";
-import { getCourseById } from "~/services/courseService";
-import { getLessonById } from "~/services/lessonService";
-import { getModuleById } from "~/services/moduleService";
-import {
-  getQuizByLessonId,
-  getQuizWithQuestions,
-  createQuiz,
-  updateQuiz,
-  deleteQuiz,
-  createQuestion,
-  createOption,
-  deleteQuestion,
-} from "~/services/quizService";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById } from "~/services/userService";
-import { UserRole, QuestionType } from "~/db/schema";
+import {
+  UserRole,
+  QuestionType,
+  users,
+  courses,
+  modules,
+  lessons,
+  quizzes,
+  quizQuestions,
+  quizOptions,
+  quizAttempts,
+  quizAnswers,
+} from "~/db/schema";
+import { db } from "~/db";
+import { eq, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -113,6 +113,156 @@ function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function getCourseById(id: number) {
+  return db.select().from(courses).where(eq(courses.id, id)).get();
+}
+
+function getModuleById(id: number) {
+  return db.select().from(modules).where(eq(modules.id, id)).get();
+}
+
+function getLessonById(id: number) {
+  return db.select().from(lessons).where(eq(lessons.id, id)).get();
+}
+
+function getQuizById(id: number) {
+  return db.select().from(quizzes).where(eq(quizzes.id, id)).get();
+}
+
+function getQuizByLessonId(lessonId: number) {
+  return db.select().from(quizzes).where(eq(quizzes.lessonId, lessonId)).get();
+}
+
+function getQuestionsByQuiz(quizId: number) {
+  return db
+    .select()
+    .from(quizQuestions)
+    .where(eq(quizQuestions.quizId, quizId))
+    .orderBy(quizQuestions.position)
+    .all();
+}
+
+function getQuizWithQuestions(quizId: number) {
+  const quiz = getQuizById(quizId);
+  if (!quiz) return null;
+
+  const questions = db
+    .select()
+    .from(quizQuestions)
+    .where(eq(quizQuestions.quizId, quizId))
+    .orderBy(quizQuestions.position)
+    .all();
+
+  const questionsWithOptions = questions.map((question) => {
+    const options = db
+      .select()
+      .from(quizOptions)
+      .where(eq(quizOptions.questionId, question.id))
+      .all();
+    return { ...question, options };
+  });
+
+  return { ...quiz, questions: questionsWithOptions };
+}
+
+function createQuiz(lessonId: number, title: string, passingScore: number) {
+  return db
+    .insert(quizzes)
+    .values({ lessonId, title, passingScore })
+    .returning()
+    .get();
+}
+
+function updateQuiz(
+  id: number,
+  title: string | null,
+  passingScore: number | null
+) {
+  const updates: Record<string, unknown> = {};
+  if (title !== null) updates.title = title;
+  if (passingScore !== null) updates.passingScore = passingScore;
+
+  if (Object.keys(updates).length === 0) {
+    return getQuizById(id);
+  }
+
+  return db
+    .update(quizzes)
+    .set(updates)
+    .where(eq(quizzes.id, id))
+    .returning()
+    .get();
+}
+
+function deleteQuiz(id: number) {
+  // Cascade: delete answers -> attempts -> options -> questions -> quiz
+  const questions = getQuestionsByQuiz(id);
+  for (const question of questions) {
+    db.delete(quizOptions).where(eq(quizOptions.questionId, question.id)).run();
+  }
+
+  const attempts = db
+    .select()
+    .from(quizAttempts)
+    .where(eq(quizAttempts.quizId, id))
+    .all();
+  for (const attempt of attempts) {
+    db.delete(quizAnswers).where(eq(quizAnswers.attemptId, attempt.id)).run();
+  }
+
+  db.delete(quizAttempts).where(eq(quizAttempts.quizId, id)).run();
+  db.delete(quizQuestions).where(eq(quizQuestions.quizId, id)).run();
+  return db.delete(quizzes).where(eq(quizzes.id, id)).returning().get();
+}
+
+function createQuestion(
+  quizId: number,
+  questionText: string,
+  questionType: QuestionType,
+  position: number | null
+) {
+  const pos =
+    position ??
+    db
+      .select({
+        max: sql<number>`coalesce(max(${quizQuestions.position}), 0)`,
+      })
+      .from(quizQuestions)
+      .where(eq(quizQuestions.quizId, quizId))
+      .get()!.max + 1;
+
+  return db
+    .insert(quizQuestions)
+    .values({ quizId, questionText, questionType, position: pos })
+    .returning()
+    .get();
+}
+
+function deleteQuestion(id: number) {
+  db.delete(quizOptions).where(eq(quizOptions.questionId, id)).run();
+  return db
+    .delete(quizQuestions)
+    .where(eq(quizQuestions.id, id))
+    .returning()
+    .get();
+}
+
+function createOption(
+  questionId: number,
+  optionText: string,
+  isCorrect: boolean
+) {
+  return db
+    .insert(quizOptions)
+    .values({ questionId, optionText, isCorrect })
+    .returning()
+    .get();
+}
+
 // ─── Meta ───
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -135,8 +285,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const user = getUserById(currentUserId);
-  if (!user || (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)) {
-    throw data("Only instructors and admins can access this page.", { status: 403 });
+  if (
+    !user ||
+    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
+  ) {
+    throw data("Only instructors and admins can access this page.", {
+      status: 403,
+    });
   }
 
   const courseId = parseInt(params.courseId, 10);
@@ -187,14 +342,22 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   const user = getUserById(currentUserId);
-  if (!user || (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)) {
-    throw data("Only instructors and admins can manage quizzes.", { status: 403 });
+  if (
+    !user ||
+    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
+  ) {
+    throw data("Only instructors and admins can manage quizzes.", {
+      status: 403,
+    });
   }
 
   const { courseId, lessonId } = parseParams(params, quizParamsSchema);
 
   const course = getCourseById(courseId);
-  if (!course || (course.instructorId !== currentUserId && user.role !== UserRole.Admin)) {
+  if (
+    !course ||
+    (course.instructorId !== currentUserId && user.role !== UserRole.Admin)
+  ) {
     throw data("Course not found or not yours.", { status: 403 });
   }
 
@@ -212,7 +375,10 @@ export async function action({ params, request }: Route.ActionArgs) {
   const parsed = parseFormData(formData, quizActionSchema);
 
   if (!parsed.success) {
-    return data({ error: Object.values(parsed.errors)[0] ?? "Invalid input." }, { status: 400 });
+    return data(
+      { error: Object.values(parsed.errors)[0] ?? "Invalid input." },
+      { status: 400 }
+    );
   }
 
   const { intent } = parsed.data;
@@ -246,12 +412,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     // Create questions and options
     for (let qi = 0; qi < wizardData.questions.length; qi++) {
       const q = wizardData.questions[qi];
-      const question = createQuestion(
-        quiz.id,
-        q.text.trim(),
-        q.type,
-        qi + 1
-      );
+      const question = createQuestion(quiz.id, q.text.trim(), q.type, qi + 1);
 
       for (const opt of q.options) {
         createOption(question.id, opt.text.trim(), opt.isCorrect);
@@ -310,9 +471,7 @@ function StepIndicator({
             )}
             {step.label}
           </button>
-          {i < STEPS.length - 1 && (
-            <div className="mx-2 h-px w-8 bg-border" />
-          )}
+          {i < STEPS.length - 1 && <div className="mx-2 h-px w-8 bg-border" />}
         </div>
       ))}
     </div>
@@ -358,8 +517,7 @@ export default function QuizBuilderWizard({
 
   // Toast on success
   const fetcherData = fetcher.data as
-    | { success?: boolean; deleted?: boolean; error?: string }
-    | undefined;
+    { success?: boolean; deleted?: boolean; error?: string } | undefined;
 
   if (fetcher.state === "idle" && fetcherData?.success) {
     if (fetcherData.deleted) {
@@ -517,11 +675,7 @@ export default function QuizBuilderWizard({
                     className="space-y-4"
                   >
                     {wizard.questions.map((q, idx) => (
-                      <Draggable
-                        key={q.id}
-                        draggableId={q.id}
-                        index={idx}
-                      >
+                      <Draggable key={q.id} draggableId={q.id} index={idx}>
                         {(dragProvided, snapshot) => (
                           <div
                             ref={dragProvided.innerRef}
@@ -572,9 +726,7 @@ export default function QuizBuilderWizard({
                                     >
                                       Multiple Choice
                                     </SelectItem>
-                                    <SelectItem
-                                      value={QuestionType.TrueFalse}
-                                    >
+                                    <SelectItem value={QuestionType.TrueFalse}>
                                       True / False
                                     </SelectItem>
                                   </SelectContent>
@@ -681,8 +833,7 @@ export default function QuizBuilderWizard({
           <CardHeader>
             <h2 className="text-lg font-semibold">Answer Options</h2>
             <p className="text-sm text-muted-foreground">
-              Set answer options for each question and mark the correct
-              answer.
+              Set answer options for each question and mark the correct answer.
             </p>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -813,7 +964,8 @@ export default function QuizBuilderWizard({
             <div className="rounded-lg bg-muted/50 p-4">
               <div className="space-y-1 text-sm">
                 <div>
-                  <span className="font-medium">Title:</span> {wizard.title || "(empty)"}
+                  <span className="font-medium">Title:</span>{" "}
+                  {wizard.title || "(empty)"}
                 </div>
                 <div>
                   <span className="font-medium">Passing Score:</span>{" "}
@@ -844,14 +996,19 @@ export default function QuizBuilderWizard({
                 </div>
                 <div className="ml-8 space-y-1">
                   {q.options.map((opt) => (
-                    <div key={opt.id} className="flex items-center gap-2 text-sm">
+                    <div
+                      key={opt.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
                       {opt.isCorrect ? (
                         <CheckCircle2 className="size-4 text-green-500" />
                       ) : (
                         <XCircle className="size-4 text-muted-foreground/40" />
                       )}
                       <span
-                        className={opt.isCorrect ? "font-medium text-green-700" : ""}
+                        className={
+                          opt.isCorrect ? "font-medium text-green-700" : ""
+                        }
                       >
                         {opt.text || "(empty)"}
                       </span>
@@ -925,10 +1082,7 @@ export default function QuizBuilderWizard({
           My Courses
         </Link>
         <span className="mx-2">/</span>
-        <Link
-          to={`/instructor/${course.id}`}
-          className="hover:text-foreground"
-        >
+        <Link to={`/instructor/${course.id}`} className="hover:text-foreground">
           {course.title}
         </Link>
         <span className="mx-2">/</span>
@@ -971,10 +1125,7 @@ export default function QuizBuilderWizard({
                   "Are you sure you want to delete this quiz? All student attempts will be lost."
                 )
               ) {
-                fetcher.submit(
-                  { intent: "delete-quiz" },
-                  { method: "post" }
-                );
+                fetcher.submit({ intent: "delete-quiz" }, { method: "post" });
               }
             }}
           >
@@ -1024,10 +1175,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       message = "The quiz, lesson, or course you're looking for doesn't exist.";
     } else if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
       title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "You don't have permission to access this page.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "You don't have permission to access this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

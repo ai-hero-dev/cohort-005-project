@@ -3,11 +3,11 @@ import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/admin.users";
-import { getAllUsers, updateUser, updateUserRole } from "~/services/userService";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById } from "~/services/userService";
 import { parseFormData } from "~/lib/validation";
-import { UserRole } from "~/db/schema";
+import { UserRole, users } from "~/db/schema";
+import { db } from "~/db";
+import { eq } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -34,6 +34,37 @@ const adminUserActionSchema = z.discriminatedUnion("intent", [
     role: z.nativeEnum(UserRole),
   }),
 ]);
+
+function getAllUsers() {
+  return db.select().from(users).all();
+}
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function updateUser(
+  id: number,
+  name: string,
+  email: string,
+  bio: string | null
+) {
+  return db
+    .update(users)
+    .set({ name, email, bio })
+    .where(eq(users.id, id))
+    .returning()
+    .get();
+}
+
+function updateUserRole(id: number, role: UserRole) {
+  return db
+    .update(users)
+    .set({ role })
+    .where(eq(users.id, id))
+    .returning()
+    .get();
+}
 
 export function meta() {
   return [

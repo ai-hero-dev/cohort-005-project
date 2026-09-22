@@ -4,16 +4,17 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/settings";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById, updateUser } from "~/services/userService";
 import { parseFormData } from "~/lib/validation";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
-import { UserRole } from "~/db/schema";
+import { UserRole, users } from "~/db/schema";
 import { AlertTriangle } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
+import { db } from "~/db";
+import { eq } from "drizzle-orm";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -36,7 +37,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const currentUser = getUserById(currentUserId);
+  const currentUser = db
+    .select()
+    .from(users)
+    .where(eq(users.id, currentUserId))
+    .get();
 
   if (!currentUser) {
     throw data("User not found.", { status: 404 });
@@ -60,7 +65,11 @@ export async function action({ request }: Route.ActionArgs) {
     throw data("You must be logged in.", { status: 401 });
   }
 
-  const currentUser = getUserById(currentUserId);
+  const currentUser = db
+    .select()
+    .from(users)
+    .where(eq(users.id, currentUserId))
+    .get();
   if (!currentUser) {
     throw data("User not found.", { status: 404 });
   }
@@ -74,7 +83,12 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { name, bio } = parsed.data;
 
-  updateUser(currentUser.id, name, currentUser.email, bio || null);
+  db
+    .update(users)
+    .set({ name, email: currentUser.email, bio: bio || null })
+    .where(eq(users.id, currentUser.id))
+    .returning()
+    .get();
   return { success: true };
 }
 

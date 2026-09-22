@@ -3,16 +3,19 @@ import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/admin.courses";
-import {
-  getAllCourses,
-  getLessonCountForCourse,
-  updateCourseStatus,
-} from "~/services/courseService";
-import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
 import { getCurrentUserId } from "~/lib/session";
-import { getUserById } from "~/services/userService";
 import { parseFormData } from "~/lib/validation";
-import { UserRole, CourseStatus } from "~/db/schema";
+import {
+  UserRole,
+  CourseStatus,
+  courses,
+  modules,
+  lessons,
+  enrollments,
+  users,
+} from "~/db/schema";
+import { db } from "~/db";
+import { eq, or, sql } from "drizzle-orm";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -33,6 +36,51 @@ const adminCourseActionSchema = z.discriminatedUnion("intent", [
     status: z.nativeEnum(CourseStatus),
   }),
 ]);
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
+function getAllCourses() {
+  return db.select().from(courses).all();
+}
+
+function getLessonCountForCourse(courseId: number) {
+  const courseModules = db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.courseId, courseId))
+    .all();
+
+  if (courseModules.length === 0) return 0;
+
+  const count = db
+    .select({ count: sql<number>`count(*)` })
+    .from(lessons)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .get();
+
+  return count?.count ?? 0;
+}
+
+function getEnrollmentCountForCourse(courseId: number) {
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(eq(enrollments.courseId, courseId))
+    .get();
+
+  return result?.count ?? 0;
+}
+
+function updateCourseStatus(id: number, status: CourseStatus) {
+  return db
+    .update(courses)
+    .set({ status, updatedAt: new Date().toISOString() })
+    .where(eq(courses.id, id))
+    .returning()
+    .get();
+}
 
 export function meta() {
   return [

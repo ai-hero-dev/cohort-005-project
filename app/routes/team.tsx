@@ -2,14 +2,49 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/team";
 import { getCurrentUserId } from "~/lib/session";
-import { getTeamForAdmin } from "~/services/teamService";
-import { getCouponsForTeam } from "~/services/couponService";
-import { getCourseById } from "~/services/courseService";
-import { getUserById } from "~/services/userService";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Users, BookOpen, Copy, Check, AlertTriangle } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
+import { db } from "~/db";
+import {
+  teams,
+  teamMembers,
+  coupons,
+  courses,
+  users,
+  TeamMemberRole,
+} from "~/db/schema";
+import { eq, and } from "drizzle-orm";
+
+function getTeamForAdmin(userId: number) {
+  const membership = db
+    .select()
+    .from(teamMembers)
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.role, TeamMemberRole.Admin)
+      )
+    )
+    .get();
+
+  if (!membership) return undefined;
+
+  return db.select().from(teams).where(eq(teams.id, membership.teamId)).get();
+}
+
+function getCouponsForTeam(teamId: number) {
+  return db.select().from(coupons).where(eq(coupons.teamId, teamId)).all();
+}
+
+function getCourseById(id: number) {
+  return db.select().from(courses).where(eq(courses.id, id)).get();
+}
+
+function getUserById(id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
 
 interface CourseStats {
   courseId: number;
