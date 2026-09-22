@@ -1,3 +1,15 @@
+---
+status: deprecated
+---
+
+> **Deprecated.** The code no longer does this. The refund window is compared
+> in UTC days — `asUtcDayString` in `app/routes/courses.$slug.tsx` and
+> `calendarDay` in `app/routes/courses.$slug.refund.ts`. Comparing the
+> server's local calendar day against a UTC `created_at` made the same
+> purchase refundable from one timezone and refused from another, in both
+> directions. Kept so nobody reads the code, thinks it looks wrong, and puts
+> the local comparison back.
+
 # Compare the refund window in local calendar days
 
 The fourteen-day refund window is counted in whole days, not hours, so somebody

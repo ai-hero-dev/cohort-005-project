@@ -1,3 +1,13 @@
+---
+status: deprecated
+---
+
+> **Deprecated.** The code no longer does this. `CODING_STANDARDS.md` now
+> requires a zod schema for form data, search parameters and request bodies,
+> and `app/lib/validation.ts` provides `parseFormData`, `parseParams` and
+> `parseJsonBody`. The `as string` casts this ADR argued for were the lie that
+> the standard was written to stop.
+
 # Validate form input by hand, not with a schema library
 
 Form fields arrive as strings. Reading them with `formData.get("x") as string`
