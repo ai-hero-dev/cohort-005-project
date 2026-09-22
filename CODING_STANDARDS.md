@@ -1,7 +1,7 @@
 # Coding standards
 
 **A `CODING_STANDARDS.md` applies to the directory it sits in, and everything
-under it.** This file is the root, so the five rules below apply everywhere.
+under it.** This file is the root, so the six rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
 
 | File                             | Applies to                                |
@@ -80,6 +80,10 @@ the two is wrong — find out which before you commit.
 
 When you change a line, read the comment above it in the same breath. A
 comment is part of the line, not decoration near it.
+
+## Keep files under 500 lines
+
+Keep every file under 500 lines.
 
 ## Import a module through its entry points, never into its subfolders
 
