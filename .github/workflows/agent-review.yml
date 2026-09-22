@@ -1,0 +1,166 @@
+name: Agent — Review A Pull Request
+
+# The second workflow in the software factory. It reviews what the first one
+# built.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:review` label on a pull request.
+#
+# THE POINT OF THIS FILE: IT IS MEMORY-LESS
+#   This workflow shares nothing with the implementer run. No session, no
+#   transcript, no scratch files, no "as we discussed". It starts from a cold
+#   checkout and three primary sources it fetches itself:
+#
+#     1. the diff              — what actually changed
+#     2. CODING_STANDARDS.md   — the rules, root plus the scoped file for
+#                                every directory the diff touches
+#     3. the originating issue — what was asked for, read from the ticket the
+#                                PR closes, not from the PR description
+#
+#   That independence is the whole value. An implementer that has argued
+#   itself into a shortcut will argue a reviewer that shares its context into
+#   the same shortcut. A reviewer that has never seen the argument cannot be.
+#   If you find yourself wanting to pass context from the build run into this
+#   one — that is the instinct to resist.
+#
+# WHAT IT NEEDS
+#   secrets.ANTHROPIC_API_KEY — the agent's auth token.
+#   secrets.GITHUB_TOKEN — supplied by Actions.
+#
+# A CAUTION THAT COMES WITH IT
+#   `pull_request` (not `pull_request_target`), so a PR from a fork runs with
+#   a read-only token and no secrets. That means this workflow will not
+#   review a fork PR. That is the correct trade: reviewing a stranger's code
+#   with a writable token is how a factory gets robbed.
+
+on:
+  pull_request:
+    types: [labeled]
+
+# Narrower than the implementer's. A reviewer reads code and writes prose. It
+# has no reason to be able to push.
+permissions:
+  contents: read # read the diff
+  pull-requests: write # post the verdict
+  issues: read # read the ticket the PR closes
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.label.name == 'agent:review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          # The merge commit, and enough history to diff against the base.
+          fetch-depth: 0
+
+      - name: Collect the three primary sources
+        run: |
+          set -euo pipefail
+
+          # 1. The diff. Three-dot, so it is the change and not the drift.
+          git diff "$BASE_SHA"...HEAD > /tmp/review-diff.patch
+          wc -l /tmp/review-diff.patch
+
+          # 2. The spec. Whatever issue this PR closes — found in the PR body,
+          #    which is the one thing here we do read from the PR. If there is
+          #    no `Closes #n`, the Spec axis reports "no spec available"
+          #    rather than inventing one.
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/pr-body.md
+          issue=$(grep -oiE '(closes|fixes|resolves) #[0-9]+' /tmp/pr-body.md \
+            | head -n1 | grep -oE '[0-9]+' || true)
+          if [ -n "$issue" ]; then
+            gh issue view "$issue" --json number,title,body,comments \
+              --jq '"# Ticket #" + (.number|tostring) + ": " + .title + "\n\n" + .body' \
+              > /tmp/review-spec.md
+          else
+            echo "No spec available: this PR does not say which ticket it closes." \
+              > /tmp/review-spec.md
+          fi
+          cat /tmp/review-spec.md
+
+          # 3. The standards. Root, plus the scoped file for every directory
+          #    the diff touches — those are the rules that actually bind here.
+          git diff --name-only "$BASE_SHA"...HEAD > /tmp/review-files.txt
+          cat /tmp/review-files.txt
+
+      - name: Review the pull request
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,Write,Bash(git diff*),Bash(git log*)"
+          prompt: |
+            You are the reviewer in this repository's software factory. You did
+            not build this change and you were told nothing about how it was
+            built. Everything you know, you read yourself.
+
+            Your sources:
+            - /tmp/review-diff.patch — the change
+            - /tmp/review-files.txt  — the files it touches
+            - /tmp/review-spec.md    — the ticket it claims to close
+            - CODING_STANDARDS.md at the repo root, plus the CODING_STANDARDS.md
+              in every directory the diff touches (app/db, app/routes,
+              app/components). A scoped file applies to its directory and
+              everything under it.
+
+            Review along exactly two axes, and keep them apart.
+
+            **Standards** — does the code follow this repository's documented
+            standards? Quote the rule you are applying, by its heading. A thing
+            that annoys you and is in no standards file is not a finding; if it
+            should be, say so at the end under "Rules this review wanted and
+            could not find".
+
+            **Spec** — does the change do what the ticket asked for? Under-build
+            and over-build are both findings. Anything the ticket asked for that
+            is missing is a finding. Anything built that no ticket asked for is
+            a finding.
+
+            Write your verdict to /tmp/review-verdict.md, in this shape:
+
+            ## Standards: PASS | CHANGES REQUESTED
+            One line of reasoning, then the findings, worst first. For each:
+            the file and line, the rule by name, and what to do instead.
+
+            ## Spec: PASS | CHANGES REQUESTED
+            One line of reasoning, then the findings.
+
+            ## Rules this review wanted and could not find
+            Anything you wanted to fail the change for that no standard covers.
+            This is the list the retro reads. It is fine for it to be empty.
+
+            Be specific and be short. Do not restate the diff. Do not praise.
+            Do not fix anything — you have no write access to the code, by
+            design.
+
+      - name: Post the verdict on the pull request
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -s /tmp/review-verdict.md ] || \
+            echo "The review run produced no verdict. See the logs." \
+              > /tmp/review-verdict.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Reviewed by the review workflow — [logs](${RUN_URL}). This run"
+            echo "saw the diff, the standards and the ticket, and nothing else."
+          } >> /tmp/review-verdict.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-verdict.md
