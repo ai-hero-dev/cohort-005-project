@@ -22,6 +22,7 @@
     "seed-wayfinder-issues": "bash scripts/seed-wayfinder-issues.sh",
     "db:migrate": "drizzle-kit migrate",
     "loc": "git ls-files | grep -vE '(lock|.db|_snapshot.json)' | xargs wc -l",
+    "lint:oxlint": "oxlint -c .oxlintrc.json",
     "lint:boundaries": "depcruise app",
     "check": "npm run typecheck && npm run lint:boundaries && npm run test"
   },
@@ -54,6 +55,7 @@
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.12.0",
     "@clack/prompts": "^1.7.0",
+    "@oxlint/plugins": "^1.85.0",
     "@react-router/dev": "8.3.0",
     "@tailwindcss/vite": "^4.1.13",
     "@types/better-sqlite3": "^7.6.13",
@@ -64,6 +66,7 @@
     "ai-hero-cli": "0.10.1",
     "dependency-cruiser": "^18.6.0",
     "drizzle-kit": "^0.31.4",
+    "oxlint": "^1.85.0",
     "prettier": "^3.8.1",
     "shadcn": "^3.8.4",
     "tailwindcss": "^4.1.13",
