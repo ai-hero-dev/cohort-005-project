@@ -9,7 +9,7 @@ import {
   lessons,
   enrollments,
 } from "~/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, isNull, or } from "drizzle-orm";
 import { getCurrentUserId } from "~/lib/session";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -82,7 +82,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isNull(enrollments.refundedAt)
+      )
     )
     .get();
   return !!enrollment;

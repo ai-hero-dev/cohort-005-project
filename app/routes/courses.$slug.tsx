@@ -21,7 +21,7 @@ import {
   LessonProgressStatus,
   RefundStatus,
 } from "~/db/schema";
-import { eq, and, or, sql, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, or, sql, inArray, isNotNull, isNull } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -142,7 +142,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isNull(enrollments.refundedAt)
+      )
     )
     .get();
   return !!enrollment;

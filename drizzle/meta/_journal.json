@@ -71,6 +71,13 @@
       "when": 1790083397130,
       "tag": "0009_clear_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790084518883,
+      "tag": "0010_faulty_archangel",
+      "breakpoints": true
     }
   ]
 }

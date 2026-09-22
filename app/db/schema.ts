@@ -132,6 +132,10 @@ export const enrollments = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
     completedAt: text("completed_at"),
+    // Set when an approved Refund takes the course back. The row stays so the
+    // learner's progress, ratings and comments keep something to point at —
+    // every read that means "has access now" filters on this being null.
+    refundedAt: text("refunded_at"),
   },
   (table) => [index("enrollments_course_idx").on(table.courseId)]
 );
