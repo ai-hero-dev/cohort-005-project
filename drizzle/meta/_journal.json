@@ -85,6 +85,13 @@
       "when": 1790679816094,
       "tag": "0011_gifted_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790764668527,
+      "tag": "0012_wandering_proudstar",
+      "breakpoints": true
     }
   ]
 }

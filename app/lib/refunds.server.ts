@@ -2,11 +2,13 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { sendEmail } from "~/lib/mailer.server";
 import { db } from "~/db";
 import {
+  NotificationCategory,
   RefundStatus,
   courses,
   enrollments,
   lessons,
   modules,
+  notifications,
   purchases,
   refunds,
   users,
@@ -17,6 +19,7 @@ import {
   canResolveRefund,
   refundableAmount,
 } from "~/lib/refunds";
+import { formatPrice } from "~/lib/utils";
 
 // ─── Refund review ───
 // Admins approve or decline requested Refunds by hand. Approving records the
@@ -70,6 +73,48 @@ function getSecondsWatched(userId: number, courseId: number) {
 }
 
 export class RefundAlreadyResolvedError extends Error {}
+
+// ─── In-app to external bridge ───
+// The notification row is the thing the bell reads. Ably is the bridge that
+// carries the same event out of the app, for a learner who is not looking at
+// it. Without ABLY_API_KEY there is no bridge — the in-app half still works,
+// and nothing here fails.
+async function publishNotificationToAbly(input: {
+  userId: number;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+}) {
+  const apiKey = process.env.ABLY_API_KEY;
+  if (!apiKey) return;
+
+  try {
+    const response = await fetch(
+      `https://rest.ably.io/channels/notifications:${input.userId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(apiKey).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: input.category,
+          data: { title: input.title, body: input.body },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `[ably] publish failed with ${response.status} ${response.statusText}`
+      );
+    }
+  } catch (error) {
+    // A vendor being unreachable must not fail a refund decision. The row is
+    // already written, and the bell reads the row.
+    console.error("[ably] could not publish notification", error);
+  }
+}
 
 /**
  * Records an Admin's decision on a requested Refund. Throws
@@ -134,7 +179,26 @@ export async function resolveRefund(
         .run();
     }
 
-    return { ...refund, amount };
+    const notice = approved
+      ? {
+          title: "Your refund was approved",
+          body: `${formatPrice(amount)} is on its way back to you for "${refund.courseTitle}".`,
+        }
+      : {
+          title: "Your refund was declined",
+          body: `We could not refund "${refund.courseTitle}". Reply to your receipt if you think that is wrong.`,
+        };
+
+    tx.insert(notifications)
+      .values({
+        userId: refund.userId,
+        category: NotificationCategory.Refund,
+        ...notice,
+        linkUrl: "/settings",
+      })
+      .run();
+
+    return { ...refund, amount, notice };
   });
 
   if (!result) return null;
@@ -148,6 +212,12 @@ export async function resolveRefund(
   });
 
   await sendEmail(email);
+
+  await publishNotificationToAbly({
+    userId: result.userId,
+    category: NotificationCategory.Refund,
+    ...result.notice,
+  });
 
   return result;
 }
