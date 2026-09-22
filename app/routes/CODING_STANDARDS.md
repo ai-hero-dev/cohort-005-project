@@ -42,3 +42,18 @@ Not the key, not a prefix of the key, not the request that carries it.
 A third-party call that is not the point of the request is wrapped and logged,
 never awaited into the failure path. The database write is the thing that
 happened; the vendor is how somebody hears about it.
+
+## A loader is a place, not a module
+
+A loader's own job is small: read the request, decide what this caller may
+see, and return it. It is a **place** — a thing the router calls — and nothing
+else in the codebase can call it. No test can either, because a loader wants a
+`Request`, a router context and a matched route before it will run at all.
+
+So anything inside a loader that has a name of its own — "the refund window",
+"the drop-off funnel", "revenue by country" — is a module sitting in the wrong
+place. Ask of each piece: could I call this from a test, given only plain
+values? If the answer is no, and the piece has a name, it wants to move.
+
+This is not a rule you have to satisfy in one go. It is the direction. See
+"Judge a module by what its interface hides" in the root file.
