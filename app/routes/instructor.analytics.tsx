@@ -37,6 +37,11 @@ import {
   users,
 } from "~/db/schema";
 import { splitRevenue, type AnalyticsRange } from "~/lib/analytics";
+import {
+  REFUND_WINDOW_DAYS,
+  summariseRefundExposure,
+  type RefundExposure,
+} from "~/modules/refund-window";
 import { getDiscountForCountry } from "~/lib/ppp";
 import {
   ANALYTICS_RANGES,
@@ -794,44 +799,6 @@ function getCourseRevenueByCountry(
   };
 }
 
-// ─── Refund exposure ───
-// Gross revenue is reported the moment a purchase lands, but a purchase is
-// refundable for fourteen days, so some of what this page calls revenue is
-// still the learner's money. This panel says how much of it is.
-const REFUND_WINDOW_DAYS = 14;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// Whole days, not hours — someone who buys at 23:00 gets the whole of their
-// fourteenth day.
-function calendarDay(when: Date): string {
-  const month = String(when.getMonth() + 1).padStart(2, "0");
-  const day = String(when.getDate()).padStart(2, "0");
-  return `${when.getFullYear()}-${month}-${day}`;
-}
-
-function lastDayOfRefundWindow(purchasedAtIso: string): string {
-  const deadline = new Date(purchasedAtIso);
-  deadline.setDate(deadline.getDate() + REFUND_WINDOW_DAYS);
-  return calendarDay(deadline);
-}
-
-type ExposedCourse = {
-  courseId: number;
-  title: string;
-  grossCents: number;
-  purchaseCount: number;
-  daysLeft: number;
-};
-
-type RefundExposure = {
-  grossCents: number;
-  netCents: number;
-  purchaseCount: number;
-  sharePercent: number;
-  closingTodayCount: number;
-  courses: ExposedCourse[];
-};
-
 export async function loader({ request, url }: Route.LoaderArgs) {
   const { userId, isAdmin } = await requireInstructorOrAdmin(request);
 
@@ -1018,72 +985,26 @@ export async function loader({ request, url }: Route.LoaderArgs) {
           )
           .get();
 
-  // Refund exposure. Every purchase in the range, then the ones still inside
-  // their refund window, grouped up. Today is read from the clock right here.
+  // Refund exposure. The rows are this loader's job; the day arithmetic over
+  // them is the refund window's, and the clock is handed to it rather than
+  // read inside it.
   const exposureRows = db
     .select({
       courseId: courses.id,
-      title: courses.title,
-      amountPaid: purchases.amountPaid,
-      createdAt: purchases.createdAt,
+      courseTitle: courses.title,
+      amountPaidCents: purchases.amountPaid,
+      purchasedAt: purchases.createdAt,
     })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(purchaseScope(instructorId, range))
     .all();
 
-  const today = calendarDay(new Date());
-  const exposedByCourse = new Map<number, ExposedCourse>();
-  let exposedGrossCents = 0;
-  let exposedPurchaseCount = 0;
-  let closingTodayCount = 0;
-
-  for (const row of exposureRows) {
-    const lastDay = lastDayOfRefundWindow(row.createdAt);
-    if (today > lastDay) continue;
-
-    // Whole days between today and the last day the learner may still ask.
-    const daysLeft = Math.round(
-      (new Date(`${lastDay}T00:00:00.000Z`).getTime() -
-        new Date(`${today}T00:00:00.000Z`).getTime()) /
-        MS_PER_DAY
-    );
-
-    exposedGrossCents += row.amountPaid;
-    exposedPurchaseCount += 1;
-    if (daysLeft === 0) closingTodayCount += 1;
-
-    const existing = exposedByCourse.get(row.courseId);
-
-    if (existing === undefined) {
-      exposedByCourse.set(row.courseId, {
-        courseId: row.courseId,
-        title: row.title,
-        grossCents: row.amountPaid,
-        purchaseCount: 1,
-        daysLeft,
-      });
-    } else {
-      existing.grossCents += row.amountPaid;
-      existing.purchaseCount += 1;
-      // The course's headline is its most urgent purchase, not its newest.
-      existing.daysLeft = Math.min(existing.daysLeft, daysLeft);
-    }
-  }
-
-  const refundExposure: RefundExposure = {
-    grossCents: exposedGrossCents,
-    netCents: splitRevenue(exposedGrossCents).netCents,
-    purchaseCount: exposedPurchaseCount,
-    sharePercent:
-      summary.grossCents === 0
-        ? 0
-        : Math.round((exposedGrossCents / summary.grossCents) * 100),
-    closingTodayCount,
-    courses: [...exposedByCourse.values()].sort(
-      (a, b) => b.grossCents - a.grossCents
-    ),
-  };
+  const refundExposure = summariseRefundExposure({
+    purchases: exposureRows,
+    totalGrossCents: summary.grossCents,
+    now: new Date(),
+  });
 
   return {
     // Split rather than filtered: the range applies, but questions older than

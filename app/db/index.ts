@@ -4,7 +4,7 @@ import * as schema from "./schema";
 
 // The connection is opened lazily, on first use. Opening it at module scope
 // made this module side-effectful, which meant Rollup could not drop it from
-// the client bundle when a route imported a service purely for its loader —
+// the client bundle when a route imported a module purely for its loader —
 // dragging better-sqlite3 into the browser. Keep this file side-effect free.
 let connection: Database.Database | undefined;
 
