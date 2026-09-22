@@ -37,6 +37,7 @@ import {
   users,
 } from "~/db/schema";
 import { splitRevenue, type AnalyticsRange } from "~/lib/analytics";
+import { systemClock } from "~/modules/clock";
 import {
   REFUND_WINDOW_DAYS,
   summariseRefundExposure,
@@ -986,8 +987,8 @@ export async function loader({ request, url }: Route.LoaderArgs) {
           .get();
 
   // Refund exposure. The rows are this loader's job; the day arithmetic over
-  // them is the refund window's, and the clock is handed to it rather than
-  // read inside it.
+  // them is the refund window's, and the clock is handed in rather than read
+  // inside it.
   const exposureRows = db
     .select({
       courseId: courses.id,
@@ -1003,7 +1004,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const refundExposure = summariseRefundExposure({
     purchases: exposureRows,
     totalGrossCents: summary.grossCents,
-    now: new Date(),
+    clock: systemClock,
   });
 
   return {
