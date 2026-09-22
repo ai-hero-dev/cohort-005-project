@@ -1,0 +1,3 @@
+interface:
+  display_name: "Mutation Testing"
+  short_description: "List the surviving mutants in a Stryker report and find them in the source"
