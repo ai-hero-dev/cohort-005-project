@@ -299,7 +299,7 @@ function RefundRequestCard({
           <div className="space-y-2 border-t pt-4">
             <Textarea
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(event) => setNote(event.target.value)}
               rows={2}
               placeholder="A note to the buyer. Required to decline."
             />
