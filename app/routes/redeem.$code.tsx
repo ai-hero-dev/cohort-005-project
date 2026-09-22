@@ -151,13 +151,6 @@ export default function Redeem({
     }
   }, [fetcher.data, actionData]);
 
-  // Determine which state to show
-  const canRedeem =
-    !alreadyRedeemed &&
-    !alreadyEnrolled &&
-    !countryMismatch &&
-    !unavailableReason;
-
   return (
     <div className="mx-auto max-w-2xl p-6 lg:p-8">
       <h1 className="mb-2 text-2xl font-bold">Redeem Coupon</h1>

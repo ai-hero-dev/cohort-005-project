@@ -6,7 +6,7 @@ import { people } from "~/modules/permissions/person.server";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
-import { Users, BookOpen, Copy, Check, AlertTriangle } from "lucide-react";
+import { BookOpen, Copy, Check, AlertTriangle } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { db } from "~/db";
 import {
@@ -55,15 +55,15 @@ function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
 }
 
-interface CourseStats {
+type CourseStats = {
   courseId: number;
   courseTitle: string;
   courseSlug: string;
   totalSeats: number;
   claimedSeats: number;
-}
+};
 
-interface CouponRow {
+type CouponRow = {
   id: number;
   code: string;
   courseId: number;
@@ -71,7 +71,7 @@ interface CouponRow {
   redeemedByEmail: string | null;
   availability: SeatAvailability;
   createdAt: string;
-}
+};
 
 export function meta() {
   return [
@@ -109,17 +109,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     // A refunded Team Licence's Unclaimed Seats can never be claimed, so
     // they no longer count towards the team's seats.
     if (coupon.refundedAt !== null) continue;
-    if (!courseMap.has(coupon.courseId)) {
+    let entry = courseMap.get(coupon.courseId);
+    if (!entry) {
       const course = getCourseById(coupon.courseId);
-      courseMap.set(coupon.courseId, {
+      entry = {
         courseId: coupon.courseId,
         courseTitle: course?.title ?? "Unknown Course",
         courseSlug: course?.slug ?? "",
         total: 0,
         claimed: 0,
-      });
+      };
+      courseMap.set(coupon.courseId, entry);
     }
-    const entry = courseMap.get(coupon.courseId)!;
     entry.total++;
     if (coupon.redeemedByUserId !== null) {
       entry.claimed++;
@@ -127,12 +128,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const courseStats: CourseStats[] = Array.from(courseMap.values()).map(
-    (e) => ({
-      courseId: e.courseId,
-      courseTitle: e.courseTitle,
-      courseSlug: e.courseSlug,
-      totalSeats: e.total,
-      claimedSeats: e.claimed,
+    (entry) => ({
+      courseId: entry.courseId,
+      courseTitle: entry.courseTitle,
+      courseSlug: entry.courseSlug,
+      totalSeats: entry.total,
+      claimedSeats: entry.claimed,
     })
   );
 
@@ -273,9 +274,11 @@ export default function Team({ loaderData }: Route.ComponentProps) {
           {courseStats.length > 1 && (
             <select
               value={courseFilter}
-              onChange={(e) =>
+              onChange={(event) =>
                 setCourseFilter(
-                  e.target.value === "all" ? "all" : Number(e.target.value)
+                  event.target.value === "all"
+                    ? "all"
+                    : Number(event.target.value)
                 )
               }
               className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"

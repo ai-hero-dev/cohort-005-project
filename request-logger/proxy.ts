@@ -133,11 +133,11 @@ function forwardHeaders(
 }
 
 function handle(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
   target: ProxyTarget
 ): void {
-  const reqPath = req.url ?? "/";
+  const reqPath = request.url ?? "/";
   // The path actually sent upstream: the agent's own request path, prefixed
   // with whatever path segment the student's custom base URL carried (e.g.
   // "/zen/go" + "/v1/chat/completions"). Empty prefix, catalogue target or
@@ -146,32 +146,32 @@ function handle(
   const upstreamPath = upstreamPathPrefix(target) + reqPath;
 
   const bodyChunks: Buffer[] = [];
-  req.on("data", (chunk: Buffer) => bodyChunks.push(chunk));
-  req.on("end", () => {
+  request.on("data", (chunk: Buffer) => bodyChunks.push(chunk));
+  request.on("end", () => {
     const body = Buffer.concat(bodyChunks);
     const timestamp = new Date().toISOString();
     const base = baseName(target);
-    const encoding = req.headers["content-encoding"];
+    const encoding = request.headers["content-encoding"];
     const { hostname, port, useHttps } = upstreamConnection(target);
 
     const onUpstreamResponse = (upstreamRes: http.IncomingMessage) => {
-      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
+      response.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
       const responseChunks: Buffer[] = [];
       upstreamRes.on("data", (chunk: Buffer) => {
         responseChunks.push(chunk);
-        res.write(chunk); // stream straight back to the agent, unbuffered
+        response.write(chunk); // stream straight back to the agent, unbuffered
       });
       upstreamRes.on("end", () => {
-        res.end();
+        response.end();
         const responseRaw = Buffer.concat(responseChunks).toString("utf8");
         writeCapture({
           base,
           target,
           timestamp,
-          method: req.method ?? "POST",
+          method: request.method ?? "POST",
           path: reqPath,
           statusCode: upstreamRes.statusCode ?? 0,
-          headers: req.headers,
+          headers: request.headers,
           requestBody: body,
           requestEncoding: Array.isArray(encoding) ? encoding[0] : encoding,
           responseRaw,
@@ -183,9 +183,9 @@ function handle(
       hostname,
       port,
       path: upstreamPath,
-      method: req.method,
+      method: request.method,
       headers: {
-        ...forwardHeaders(req.headers, body),
+        ...forwardHeaders(request.headers, body),
         host: hostname,
       },
     };
@@ -193,14 +193,14 @@ function handle(
       ? https.request(requestOptions, onUpstreamResponse)
       : http.request(requestOptions, onUpstreamResponse);
 
-    upstreamReq.on("error", (err) => {
-      console.error(`[request-logger] upstream error: ${err.message}`);
-      if (!res.headersSent) {
-        res.writeHead(502, { "content-type": "application/json" });
+    upstreamReq.on("error", (error) => {
+      console.error(`[request-logger] upstream error: ${error.message}`);
+      if (!response.headersSent) {
+        response.writeHead(502, { "content-type": "application/json" });
       }
-      res.end(
+      response.end(
         JSON.stringify({
-          error: `request-logger upstream error: ${err.message}`,
+          error: `request-logger upstream error: ${error.message}`,
         })
       );
     });
@@ -226,10 +226,13 @@ function handle(
  * silence, so it retries over plain HTTP right away rather than hanging or
  * waiting out its own timeout.
  */
-export function rejectUpgrade(req: http.IncomingMessage, socket: Duplex): void {
+export function rejectUpgrade(
+  request: http.IncomingMessage,
+  socket: Duplex
+): void {
   console.log(
     dim(
-      `[request-logger] ${req.method ?? "GET"} ${req.url ?? "/"} tried a WebSocket upgrade -> 426 (forcing HTTP fallback)`
+      `[request-logger] ${request.method ?? "GET"} ${request.url ?? "/"} tried a WebSocket upgrade -> 426 (forcing HTTP fallback)`
     )
   );
   socket.end(
@@ -237,7 +240,7 @@ export function rejectUpgrade(req: http.IncomingMessage, socket: Duplex): void {
   );
 }
 
-interface Capture {
+type Capture = {
   base: string;
   target: ProxyTarget;
   timestamp: string;
@@ -248,7 +251,7 @@ interface Capture {
   requestBody: Buffer;
   requestEncoding?: string;
   responseRaw: string;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Retry-burst guard
@@ -278,19 +281,19 @@ interface Capture {
 export const BURST_THRESHOLD = 20;
 export const BURST_WINDOW_MS = 2_000;
 
-export interface BurstState {
+export type BurstState = {
   key: string;
   windowStart: number;
   count: number;
   warned: boolean;
-}
+};
 
-export interface BurstResult {
+export type BurstResult = {
   state: BurstState;
   suppressed: boolean;
   /** True on the one call that crosses the threshold — print the warning here, not every time. */
   justDetected: boolean;
-}
+};
 
 export function burstKey(
   method: string,
@@ -305,11 +308,13 @@ export function trackBurst(
   key: string,
   now: number
 ): BurstResult {
-  const fresh =
-    !state || state.key !== key || now - state.windowStart > BURST_WINDOW_MS;
-  const count = fresh ? 1 : state!.count + 1;
-  const windowStart = fresh ? now : state!.windowStart;
-  const wasWarned = fresh ? false : state!.warned;
+  const current =
+    state && state.key === key && now - state.windowStart <= BURST_WINDOW_MS
+      ? state
+      : null;
+  const count = current ? current.count + 1 : 1;
+  const windowStart = current ? current.windowStart : now;
+  const wasWarned = current ? current.warned : false;
   const suppressed = count > BURST_THRESHOLD;
   return {
     state: { key, windowStart, count, warned: wasWarned || suppressed },
@@ -400,9 +405,9 @@ function writeCapture(c: Capture): void {
         `logs/${c.base}.md`
       )}`
     );
-  } catch (err) {
+  } catch (error) {
     console.error(
-      `[request-logger] failed to write logs: ${(err as Error).message}`
+      `[request-logger] failed to write logs: ${(error as Error).message}`
     );
   }
 }
@@ -569,7 +574,9 @@ async function main(): Promise<void> {
   }
 
   const target = resolution;
-  const server = http.createServer((req, res) => handle(req, res, target));
+  const server = http.createServer((request, response) =>
+    handle(request, response, target)
+  );
   server.on("upgrade", rejectUpgrade);
   server.listen(PORT, () => {
     printBanner(target);
@@ -607,8 +614,8 @@ function wrap(text: string, width: number): string[] {
 const isMain =
   path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url);
 if (isMain) {
-  main().catch((err) => {
-    console.error(`[request-logger] ${(err as Error).message}`);
+  main().catch((error) => {
+    console.error(`[request-logger] ${(error as Error).message}`);
     process.exit(1);
   });
 }

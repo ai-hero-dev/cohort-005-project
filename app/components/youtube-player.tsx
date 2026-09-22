@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
 declare global {
+  // oxlint-disable-next-line typescript/consistent-type-definitions -- augmenting Window needs an interface
   interface Window {
     YT: typeof YT;
     onYouTubeIframeAPIReady: (() => void) | undefined;
@@ -65,7 +66,6 @@ function loadYouTubeAPI(): Promise<void> {
 export function YouTubePlayer({
   videoUrl,
   lessonId,
-  title,
   startPosition,
   durationMinutes,
   watchProgress: initialProgress,
@@ -79,7 +79,7 @@ export function YouTubePlayer({
     null
   );
   const [progress, setProgress] = useState(initialProgress);
-  const [videoDuration, setVideoDuration] = useState(
+  const [, setVideoDuration] = useState(
     durationMinutes ? durationMinutes * 60 : 0
   );
 
@@ -239,6 +239,7 @@ export function YouTubePlayer({
       )}
       {onToggleAutoplay && (
         <div className="mt-2 flex items-center justify-end">
+          {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- the label wraps a button, which is labelable */}
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             Autoplay
             <button
