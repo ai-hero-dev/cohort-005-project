@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Explore plan",
+  "description": "The structured output of the explore workflow: one entry per issue in the batch. The apply job checks the whole plan, then does what it says.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issues"],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "description": "One entry per issue in the batch. Every issue exactly once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "comment"],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "description": "The issue this entry is for."
+          },
+          "duplicate_of": {
+            "type": "integer",
+            "description": "Only on a duplicate: the oldest issue in the batch it duplicates. That issue survives. Leave it out when this issue survives."
+          },
+          "comment": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Markdown comment to post on the issue, as-is."
+          }
+        }
+      }
+    }
+  }
+}
