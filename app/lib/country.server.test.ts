@@ -29,7 +29,7 @@ describe("resolveCountry", () => {
   it("uses dev session override first", async () => {
     mockSession.set("devCountry", "IN");
     const result = await resolveCountry(
-      makeRequest({ "CF-IPCountry": "US", "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "CF-IPCountry": "US", "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBe("IN");
   });
@@ -45,11 +45,11 @@ describe("resolveCountry", () => {
       json: async () => ({ countryCode: "NG" }),
     });
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBe("NG");
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://ip-api.com/json/1.2.3.4?fields=countryCode",
+      "http://ip-api.com/json/1.2.3.4?fields=countryCode"
     );
   });
 
@@ -92,17 +92,35 @@ describe("resolveCountry", () => {
       json: async () => ({ countryCode: "JP" }),
     });
     await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4, 5.6.7.8" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4, 5.6.7.8" })
     );
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://ip-api.com/json/1.2.3.4?fields=countryCode",
+      "http://ip-api.com/json/1.2.3.4?fields=countryCode"
+    );
+  });
+
+  // Pins the `.trim()` in country.server.ts. A mutation run removed it and
+  // the suite stayed green: every other X-Forwarded-For test uses a header
+  // whose first entry already has no space around it, so nothing here ever
+  // had an opinion about the trimming. A proxy that writes "a , b" would
+  // have sent " " into the URL.
+  it("trims whitespace around the first X-Forwarded-For entry", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ countryCode: "SE" }),
+    });
+    await resolveCountry(
+      makeRequest({ "X-Forwarded-For": "1.2.3.4 , 5.6.7.8" })
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://ip-api.com/json/1.2.3.4?fields=countryCode"
     );
   });
 
   it("returns null when ip-api.com returns non-ok response", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false });
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBeNull();
   });
@@ -110,7 +128,7 @@ describe("resolveCountry", () => {
   it("returns null when ip-api.com throws (network error)", async () => {
     mockFetch.mockRejectedValueOnce(new Error("network error"));
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBeNull();
   });
@@ -121,7 +139,7 @@ describe("resolveCountry", () => {
       json: async () => ({ status: "fail" }),
     });
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBeNull();
   });
