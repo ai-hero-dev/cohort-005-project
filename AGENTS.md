@@ -37,4 +37,4 @@ To read the report, see the `mutation-testing` skill.
 
 ### Issue tracker
 
-Issues and PRDs live as GitHub issues on `ai-hero-dev/ai-coding-crash-course`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and PRDs live as GitHub issues on `ai-hero-dev/cohort-005-project`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
