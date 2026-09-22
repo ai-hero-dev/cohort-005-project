@@ -4,6 +4,45 @@ Do these checks in this order before you report a change to `app/` as complete:
 
 1. `npm run typecheck`
 2. `npm run test`
+3. `npm run test:mutation`
+
+### About `npm run test:mutation`
+
+This command does mutation testing with Stryker. It examines the `.ts` and
+`.tsx` files below `app/lib/` and `request-logger/` that the current change
+touches. A file counts as touched if a commit changed it after the branch
+left `main`, or if it is uncommitted now.
+
+Those two directories are the whole of the scope, because they are the whole
+of what a test reaches. No test imports a route module — a loader needs a
+`Request` and a database — so every mutant in one comes back `NoCoverage`,
+which you already knew. Mutation testing does not close that gap. Write the
+test first, then grade it here.
+
+Name the target yourself to grade an area rather than a change:
+
+```
+npm run test:mutation -- app/lib
+```
+
+Run this command from the top of the repository.
+
+A mutant that survives is a comment about the test, not about the source. The
+suite is green, but it does not pin the behaviour down. For each survivor, do
+one of these:
+
+- Make the test stronger, until it fails against the mutant.
+- Record why the behaviour is unspecified, and why you accept the mutant.
+
+The command is a full `stryker run` on a small number of files. Thus it is
+quick enough to use for each change.
+
+The command also uses the `incremental` mode of Stryker. This mode keeps the
+results in `reports/stryker-incremental.json`, which is local and gitignored.
+After you correct one survivor, the next run examines again only the mutants
+that your correction can affect.
+
+To read the report, see the `mutation-testing` skill.
 
 `.husky/pre-commit` runs both again, and then `npm run lint:oxlint` and
 `npm run check:file-size`. See `docs/agents/pre-commit-checks.md`.
