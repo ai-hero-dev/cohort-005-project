@@ -121,6 +121,14 @@ export function DevUI({
                   key={user.id}
                   method="post"
                   action={`/api/switch-user?redirectTo=${encodeURIComponent(location.pathname + location.search)}`}
+                  // The panel sits beside the `Outlet`, not inside it, so
+                  // switching user never unmounts it and `open` stays true
+                  // across the navigation. Close it as the form goes.
+                  //
+                  // Not on the button's `onClick`: the state change unmounts
+                  // this form before the browser dispatches `submit`, and the
+                  // switch silently does not happen.
+                  onSubmit={() => setOpen(false)}
                 >
                   <input type="hidden" name="userId" value={user.id} />
                   <button
