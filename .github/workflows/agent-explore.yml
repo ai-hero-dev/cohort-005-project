@@ -1,0 +1,124 @@
+name: Agent — Explore A Ticket
+
+# The third workflow in the software factory, and the one that runs first.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:explore` label on an issue.
+#
+# WHAT IT DOES — AND, MORE IMPORTANTLY, WHAT IT DOES NOT
+#   It reads. It reads the ticket, then it reads the code the ticket would
+#   touch, and it writes what it found as a comment on that issue. That is
+#   the end of the run.
+#
+#   It does not edit a file. It does not open a branch. It does not open a
+#   pull request. Nothing it produces can be merged, because nothing it
+#   produces is code.
+#
+#   Read the `permissions:` block below before you read anything else. It is
+#   the enforcement, not the description: `contents: read` means this job's
+#   token cannot push, and `pull-requests: none` means it cannot open a PR
+#   even if the agent decided it wanted to. The prompt asks the agent not to.
+#   The permissions mean it cannot.
+#
+# WHY EXPLORE BEFORE YOU COMMIT
+#   A ticket that looks like twenty minutes and is actually a schema change
+#   costs the same to explore as one that really is twenty minutes. The cheap
+#   run in front tells you which one you have, and it tells you in prose a
+#   human can read in thirty seconds instead of a diff they have to review.
+#
+# WHAT IT NEEDS
+#   secrets.ANTHROPIC_API_KEY — the agent's auth token.
+#   secrets.GITHUB_TOKEN — supplied by Actions.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read # read the code — that is all
+  issues: write # post the findings back on the ticket
+  pull-requests: none # it does not open one, and it cannot
+
+concurrency:
+  group: agent-explore-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  explore:
+    if: github.event.label.name == 'agent:explore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read the ticket
+        run: |
+          set -euo pipefail
+          gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,comments \
+            --jq '"# " + .title + "\n\n" + .body' > /tmp/ticket.md
+          cat /tmp/ticket.md
+
+      - name: Explore
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Read tools and one Write, for the findings file. No Edit, no
+          # `git commit`, no `gh pr`. The allowlist says the same thing the
+          # permissions block says, one layer further in.
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Write(/tmp/*),Bash(git log*),Bash(git diff*),Bash(npm run lint:boundaries)"
+          prompt: |
+            You are the explorer in this repository's software factory. You are
+            the cheap run that goes in front of the expensive one.
+
+            Your ticket is in /tmp/ticket.md.
+
+            Read the repository until you can answer these, and then stop. Do
+            not implement anything. Do not edit a single file under app/.
+
+            1. **What this actually touches.** The files, the modules and the
+               tables. Name them. If it needs a schema change or a migration,
+               say so first and loudly — that is the finding that changes
+               someone's afternoon.
+            2. **Where it goes.** Which module under app/services/ owns this
+               idea, or the name of the new one, in the words GLOSSARY.md
+               already uses. If it wants to live in a loader, say why it
+               cannot.
+            3. **What it collides with.** Anything already in flight, any ADR
+               in docs/adr/ that decided this once already, any standard in
+               CODING_STANDARDS.md that constrains the shape.
+            4. **What you could not answer.** The questions a human has to
+               settle before anyone builds this. Be honest here. An empty list
+               is a claim, and it is usually a wrong one.
+
+            Write it to /tmp/findings.md, as Markdown, under those four
+            headings. Aim for something readable in under a minute — no code
+            blocks longer than a few lines, no restating of files back at the
+            reader.
+
+      - name: Comment the findings on the ticket
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -s /tmp/findings.md ] || \
+            echo "The explore run produced no findings. See the logs." \
+              > /tmp/findings.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Explored by the explore workflow — [logs](${RUN_URL})."
+            echo "Nothing was built and no branch exists. This run could not have"
+            echo "written code if it had wanted to: see \`permissions:\` in"
+            echo "\`.github/workflows/agent-explore.yml\`."
+          } >> /tmp/findings.md
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/findings.md
