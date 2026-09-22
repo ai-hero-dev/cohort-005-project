@@ -23,3 +23,47 @@ is a lie the type checker believes.
 Both switch the type checker off at the exact point you are least sure. If a
 value can be missing, narrow it with a check. If you cannot name the type,
 the shape is wrong — fix the shape.
+
+## A comment says why, and it says it about the code that is there
+
+Three comments earn their place: why a decision was taken, what a caller must
+know that the signature does not say, and a warning about something
+surprising. Nothing else.
+
+Two habits are banned, because the review that wrote this rule found both
+across one diff:
+
+**A comment that describes code that is no longer there.** It is worse than no
+comment, because it is believed.
+
+```ts
+// Reads the learner's cached progress row for a lesson, falling back to the
+// progress service when the cache has not been warmed yet.
+function getLessonProgress(userId: number, lessonId: number) {
+  return db.select().from(lessonProgress)/* … */.get();
+}
+```
+
+There is no cache and there is no progress service. The comment is describing
+a shape the code had before it was inlined.
+
+**A comment that restates the line under it, or contradicts it.**
+
+```ts
+if (existing) {
+  // Create the note row.
+  return db
+    .update(notes)
+    .set({ body, updatedAt: now })
+    .where(eq(notes.id, existing.id))
+    .returning()
+    .get();
+}
+```
+
+If you are writing a comment, read the line beneath it first. If the comment
+says the same thing, delete the comment. If it says a different thing, one of
+the two is wrong — find out which before you commit.
+
+When you change a line, read the comment above it in the same breath. A
+comment is part of the line, not decoration near it.
