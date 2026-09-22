@@ -5,8 +5,9 @@ Do these checks in this order before you report a change to `app/` as complete:
 1. `npm run typecheck`
 2. `npm run lint:boundaries`
 3. `npm run test`
+4. `npm run test:mutation`
 
-Or run all three with `npm run check`.
+Or run the first three with `npm run check`.
 
 `npm run lint:oxlint` lints the whole repository with oxlint (`.oxlintrc.json`).
 
