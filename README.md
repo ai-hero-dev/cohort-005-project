@@ -76,13 +76,12 @@ npm run cherry-pick course-star-ratings
 
 ## Tech Stack
 
-- **Framework:** [React Router](https://reactrouter.com/) v7 with SSR
+- **Framework:** [React Router](https://reactrouter.com/) v8 with SSR
 - **Language:** TypeScript 5.9
 - **Database:** SQLite via [Drizzle ORM](https://orm.drizzle.team/)
 - **Styling:** Tailwind CSS 4 + [shadcn/ui](https://ui.shadcn.com/)
 - **Testing:** [Vitest](https://vitest.dev/)
 - **Build:** [Vite](https://vite.dev/) 7
-- **Real-time:** [Ably](https://ably.com/) for live presence
 
 ## License
 
