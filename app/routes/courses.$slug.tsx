@@ -54,7 +54,6 @@ import {
   getCountryTierInfo,
   getDiscountForCountry,
 } from "~/lib/ppp";
-import { systemClock } from "~/services/clock";
 import { decideRefund } from "~/services/refund-policy";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
@@ -472,7 +471,7 @@ function getRefundOffer(userId: number, course: { id: number; price: number }) {
       hasOpenRefund: getRequestedRefund(purchase.id) !== undefined,
     },
     (country) => getDiscountForCountry(country) > 0,
-    systemClock
+    new Date()
   );
 
   if (!decision.eligible) return null;

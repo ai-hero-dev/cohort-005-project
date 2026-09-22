@@ -37,7 +37,6 @@ import {
   users,
 } from "~/db/schema";
 import { splitRevenue, type AnalyticsRange } from "~/lib/analytics";
-import { systemClock } from "~/services/clock";
 import {
   REFUND_WINDOW_DAYS,
   summariseRefundExposure,
@@ -1020,7 +1019,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const refundExposure = summariseRefundExposure({
     purchases: exposureRows,
     totalGrossCents: summary.grossCents,
-    clock: systemClock,
+    now: new Date(),
   });
 
   return {
