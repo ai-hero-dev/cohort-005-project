@@ -34,6 +34,10 @@ shape the candidates below assume.
 
 **Strength: Strong. This is the top recommendation.**
 
+**Shipped.** Spec and tickets at [docs/specs/refund-policy.md](../specs/refund-policy.md).
+`app/services/refund-policy/` holds the five conditions, `app/services/clock/`
+holds the seam for today, and both callers ask. The drift below is closed.
+
 **Files:** `app/routes/courses.$slug.tsx` (`getRefundOffer`, and the five
 constants above it), `app/routes/courses.$slug.refund.ts` (the action).
 
@@ -153,8 +157,9 @@ codebase is behind the loaders, not in what renders.
 
 ## Sequence
 
-1. Candidate 1, the Refund Policy, with the `Clock` seam it needs. It closes a
-   live bug, and it is the first business rule in this codebase with a test.
+1. ~~Candidate 1, the Refund Policy, with the `Clock` seam it needs.~~ Done.
+   It closed a live bug, and it is the first business rule in this codebase
+   with a test.
 2. Candidate 2, one analytics panel, to prove the pattern holds for a route
    nobody wants to touch.
 3. Candidates 3 and 4 fall out of the two above, or wait for a reason.
