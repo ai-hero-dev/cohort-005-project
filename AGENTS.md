@@ -6,6 +6,7 @@ Do these checks in this order before you report a change to `app/` as complete:
 2. `npm run test`
 3. `npm run lint:boundaries`
 4. `npm run test:mutation`
+5. `npm run check:console -- <route>`, when you changed anything that renders
 
 ### About `npm run test:mutation`
 
@@ -44,15 +45,22 @@ that your correction can affect.
 
 To read the report, see the `mutation-testing` skill.
 
+### About `npm run check:console`
+
+This command opens one route in a headless browser and prints the browser
+console. `typecheck` and `test` never load a page, so a component that breaks
+in the browser passes both. See `docs/agents/frontend-feedback-loop.md`.
+
 `.husky/pre-commit` runs the first three again, and then `npm run lint:oxlint`
 and `npm run check:file-size`. See `docs/agents/pre-commit-checks.md`.
 
 ## When something breaks
 
-| Symptom                                         | Cause                                                                                                  |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 401 "Select a user from the DevUI panel"        | No user in the session — switch users and country in the floating panel (`app/components/dev-ui.tsx`). |
-| `tsc` reports every `./+types/*` import missing | Typegen has not run. Use `npm run typecheck`, which runs `react-router typegen` first.                 |
+| Symptom                                         | Cause                                                                                                                                                                      |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401 "Select a user from the DevUI panel"        | No user in the session — switch users and country in the floating panel (`app/components/dev-ui.tsx`).                                                                     |
+| `tsc` reports every `./+types/*` import missing | Typegen has not run. Use `npm run typecheck`, which runs `react-router typegen` first.                                                                                     |
+| The page renders and every button is dead       | The browser could not run a module, so React never hydrated. Run `npm run check:console -- <route>` and read the first error. See `docs/agents/frontend-feedback-loop.md`. |
 
 ## Coding standards
 
