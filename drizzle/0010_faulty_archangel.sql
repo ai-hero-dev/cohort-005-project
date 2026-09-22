@@ -1,0 +1,1 @@
+ALTER TABLE `enrollments` ADD `refunded_at` text;
