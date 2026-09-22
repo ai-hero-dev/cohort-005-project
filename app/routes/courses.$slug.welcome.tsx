@@ -52,7 +52,7 @@ function getCourseWithDetails(id: number) {
       ? db
           .select()
           .from(lessons)
-          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid)))!)
+          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid))))
           .orderBy(lessons.position)
           .all()
       : [];

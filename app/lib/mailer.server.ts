@@ -12,9 +12,9 @@ export type Email = {
   body: string;
 };
 
-export interface MailTransport {
+export type MailTransport = {
   send(email: Email): Promise<void>;
-}
+};
 
 const FROM_ADDRESS = "Cadence <hello@cadence.dev>";
 

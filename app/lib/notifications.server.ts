@@ -77,7 +77,7 @@ export type Notification = {
   };
 }[NotificationKind];
 
-export interface Notifications {
+export type Notifications = {
   /**
    * Sends one Notification. The idempotency key makes a retry with the same
    * key a no-op, e.g. `discussion-reply:<commentId>`.
@@ -112,7 +112,7 @@ export interface Notifications {
    * Notifications that only mention it (a reply's `questionId`) stay.
    */
   archiveForComment(commentId: number): Promise<void>;
-}
+};
 
 /**
  * Runs Notifications work that must never break what called it. A failure is
@@ -166,6 +166,8 @@ export async function sendSafely(
   );
 }
 
+// Logging is this fallback's whole job.
+/* oxlint-disable no-console */
 export function loggingNotifications(): Notifications {
   return {
     async send(notification, idempotencyKey) {
@@ -198,6 +200,7 @@ export function loggingNotifications(): Notifications {
     },
   };
 }
+/* oxlint-enable no-console */
 
 let appNotifications: Notifications | undefined;
 
