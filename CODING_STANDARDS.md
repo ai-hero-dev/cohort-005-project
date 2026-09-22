@@ -42,6 +42,10 @@ Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
 
+## Keep files under 500 lines
+
+Keep every file under 500 lines.
+
 ## Wrap related writes in a transaction
 
 Two writes that must both land, or neither, go in a transaction. If the second
