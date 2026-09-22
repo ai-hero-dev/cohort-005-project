@@ -4,7 +4,7 @@ These rules carry over from the AI Coding Crash Course. They are short on
 purpose. Add a rule when a review or a retro shows you need one — not before.
 
 **A `CODING_STANDARDS.md` applies to the directory it sits in, and everything
-under it.** This file is the root, so the four rules below apply everywhere.
+under it.** This file is the root, so the five rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
 
 | File                             | Applies to                                |
@@ -83,6 +83,24 @@ the two is wrong — find out which before you commit.
 
 When you change a line, read the comment above it in the same breath. A
 comment is part of the line, not decoration near it.
+
+## Keep a file under five hundred lines
+
+A file you cannot hold in your head is a file nobody reads before they change
+it. Five hundred lines is the ceiling. It is not a precise number — it is the
+point past which a route module stops being one thing and becomes a pile of
+things that happen to share a file.
+
+`app/routes/instructor.analytics.tsx` is about nineteen hundred lines. Every
+query, every aggregation and every chart for the whole instructor dashboard
+sits in one loader. Nobody chose that. It arrived one addition at a time, and
+no step was the step that made it too long.
+
+When a file goes past the ceiling, split it. Move the part that has its own
+name into its own module.
+
+Nothing enforces this rule. It is a sentence in a file, and a sentence in a
+file only works on the days somebody reads it.
 
 ## What was taken out, and why
 
