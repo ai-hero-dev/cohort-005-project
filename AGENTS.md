@@ -10,15 +10,16 @@ Do these checks in this order before you report a change to `app/` as complete:
 ### About `npm run test:mutation`
 
 This command does mutation testing with Stryker. It examines the `.ts` and
-`.tsx` files below `app/lib/` and `request-logger/` that the current change
-touches. A file counts as touched if a commit changed it after the branch
+`.tsx` files below `app/lib/`, `app/services/` and `request-logger/` that the
+current change touches. A file counts as touched if a commit changed it after the branch
 left `main`, or if it is uncommitted now.
 
-Those two directories are the whole of the scope, because they are the whole
-of what a test reaches. No test imports a route module — a loader needs a
-`Request` and a database — so every mutant in one comes back `NoCoverage`,
-which you already knew. Mutation testing does not close that gap. Write the
-test first, then grade it here.
+Those three directories are the whole of the scope, because they are the
+whole of what a test reaches. No test imports a route module — a loader needs
+a `Request` and a database — so every mutant in one comes back `NoCoverage`,
+which you already knew. Mutation testing does not close that gap. `app/services/`
+is where a piece goes when you want it graded: it holds the rules that used to
+be inline in a loader, behind an interface a test can call.
 
 Name the target yourself to grade an area rather than a change:
 

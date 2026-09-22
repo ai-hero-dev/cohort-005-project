@@ -40,12 +40,13 @@ const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
  * changes. Everywhere else, every mutant comes back `NoCoverage`, which you
  * already knew, and the run costs minutes to tell you.
  *
- * Today that is `app/lib/` and `request-logger/`. The route modules hold the
- * queries and the rules, and no test imports one of them — a loader needs a
- * `Request` and a database. That is a real gap, and mutation testing is not
- * the tool that closes it: write the test first, then grade it here.
+ * Today that is `app/lib/`, `app/services/` and `request-logger/`. The route
+ * modules still hold most of the queries and the rules, and no test imports
+ * one of them — a loader needs a `Request` and a database. That is a real
+ * gap, and mutation testing is not the tool that closes it: move the piece
+ * into `app/services/`, write the test, then grade it here.
  */
-const TESTED_ROOTS = ["app/lib/", "request-logger/"];
+const TESTED_ROOTS = ["app/lib/", "app/services/", "request-logger/"];
 
 function git(args: string[]): string[] {
   try {
