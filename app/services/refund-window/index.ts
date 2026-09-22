@@ -1,4 +1,5 @@
 import { splitRevenue } from "~/lib/analytics";
+import { utcDay, utcDayAfter, wholeDaysBetween } from "./lib/utc-days";
 
 // ─── The refund window ───
 //
@@ -13,8 +14,6 @@ import { splitRevenue } from "~/lib/analytics";
 
 /** The length of the refund window, in whole days. See `GLOSSARY.md`. */
 export const REFUND_WINDOW_DAYS = 14;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** A purchase, reduced to the four things the window cares about. */
 export type PurchaseInWindow = {
@@ -47,28 +46,10 @@ export type RefundExposure = {
   courses: ExposedCourse[];
 };
 
-/**
- * The window is counted in whole days, not hours: somebody who buys at 23:00
- * gets the whole of their fourteenth day. The day is read in UTC, the clock
- * `created_at` is written in, so a Learner in Auckland and a Learner in Los
- * Angeles get the same answer for the same Purchase.
- */
-function utcDay(when: Date): string {
-  return when.toISOString().slice(0, 10);
-}
-
+// The window is counted in whole days, not hours: somebody who buys at 23:00
+// gets the whole of their fourteenth day.
 function lastDayOfWindow(purchasedAt: string): string {
-  return utcDay(
-    new Date(new Date(purchasedAt).getTime() + REFUND_WINDOW_DAYS * MS_PER_DAY)
-  );
-}
-
-function wholeDaysBetween(from: string, to: string): number {
-  return Math.round(
-    (new Date(`${to}T00:00:00.000Z`).getTime() -
-      new Date(`${from}T00:00:00.000Z`).getTime()) /
-      MS_PER_DAY
-  );
+  return utcDayAfter(purchasedAt, REFUND_WINDOW_DAYS);
 }
 
 /**

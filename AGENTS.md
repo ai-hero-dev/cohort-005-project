@@ -60,8 +60,8 @@ This command opens one route in a headless browser and prints the browser
 console. `typecheck` and `test` never load a page, so a component that breaks
 in the browser passes both. See `docs/agents/frontend-feedback-loop.md`.
 
-`.husky/pre-commit` runs both again, and then `npm run lint:oxlint` and
-`npm run check:file-size`. See `docs/agents/pre-commit-checks.md`.
+`.husky/pre-commit` runs both again, and then `npm run lint:oxlint`,
+`npm run lint:boundaries` and `npm run check:file-size`. See `docs/agents/pre-commit-checks.md`.
 
 ## When something breaks
 
@@ -90,6 +90,10 @@ Read the root file and the one for the directory you are editing.
 Issues and PRDs live as GitHub issues on `ai-hero-dev/cohort-005-project`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Codebase design
+
+Services are deep modules: read [app/services/README.md](./app/services/README.md)
+before you add one or import one. `npm run lint:boundaries` enforces the
+boundary, and `.husky/pre-commit` runs it.
 
 The `codebase-design` skill holds the vocabulary this repo uses to talk about
 its own shape — **module**, **interface**, **implementation**, **depth**,
