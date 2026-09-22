@@ -46,7 +46,7 @@ private.
 
 ```ts
 import { summariseRefundExposure } from "~/modules/refund-window"; // yes
-import { calendarDay } from "~/modules/refund-window/lib/calendar-days"; // no
+import { dayOfMoment } from "~/modules/clock/lib/calendar-days"; // no
 ```
 
 A module whose interface hides its implementation only hides it while nobody
