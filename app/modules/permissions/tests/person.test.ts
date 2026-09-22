@@ -41,7 +41,7 @@ async function signedInRequest(
 }
 
 function cookieFrom(setCookie: string) {
-  return setCookie.split(";")[0]!;
+  return setCookie.split(";")[0];
 }
 
 describe("getPerson", () => {
@@ -116,7 +116,9 @@ describe("requirePerson", () => {
   });
 
   it("throws 401 asking to select a user when signed out", async () => {
-    const thrown = await people.requirePerson(makeRequest()).catch((e) => e);
+    const thrown = await people
+      .requirePerson(makeRequest())
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 401 },
@@ -141,7 +143,7 @@ describe("requirePlatformAdmin", () => {
   it("throws 401 asking to select a user when signed out", async () => {
     const thrown = await people
       .requirePlatformAdmin(makeRequest())
-      .catch((e) => e);
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 401 },
@@ -152,7 +154,9 @@ describe("requirePlatformAdmin", () => {
   it("throws 403 for a Student", async () => {
     const request = await signedInRequest(base.user.id);
 
-    const thrown = await people.requirePlatformAdmin(request).catch((e) => e);
+    const thrown = await people
+      .requirePlatformAdmin(request)
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 403 },
@@ -163,7 +167,9 @@ describe("requirePlatformAdmin", () => {
   it("throws 403 for an Instructor", async () => {
     const request = await signedInRequest(base.instructor.id);
 
-    const thrown = await people.requirePlatformAdmin(request).catch((e) => e);
+    const thrown = await people
+      .requirePlatformAdmin(request)
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 403 },
@@ -201,7 +207,7 @@ describe("requireInstructorOrPlatformAdmin", () => {
 
     const thrown = await people
       .requireInstructorOrPlatformAdmin(request)
-      .catch((e) => e);
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 403 },
@@ -234,7 +240,7 @@ describe("requireInstructorOrPlatformAdmin", () => {
   it("throws 401 when signed out", async () => {
     const thrown = await people
       .requireInstructorOrPlatformAdmin(makeRequest())
-      .catch((e) => e);
+      .catch((error) => error);
 
     expect(thrown).toMatchObject({
       init: { status: 401 },

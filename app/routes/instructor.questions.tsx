@@ -242,6 +242,7 @@ function QuestionCard({ question }: { question: Question }) {
             </div>
             <div
               className="prose prose-sm prose-neutral dark:prose-invert mt-1 max-w-none"
+              // oxlint-disable-next-line react/no-danger -- renderComment escapes the HTML in the Markdown
               dangerouslySetInnerHTML={{ __html: question.bodyHtml }}
             />
           </div>
