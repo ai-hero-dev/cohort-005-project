@@ -162,8 +162,7 @@ async function seed() {
 
   // Owns no courses — the instructor views must survive an instructor with
   // nothing to show.
-  const [instructor3] = db
-    .insert(schema.users)
+  db.insert(schema.users)
     .values({
       name: "Priya Nair",
       email: "priya.nair@ralph.dev",
@@ -2138,14 +2137,14 @@ This course is still in draft while the cluster examples are rewritten against t
     for (let qi = 0; qi < questionIds.length; qi++) {
       const qId = questionIds[qi];
       const qOptions = optionIds.filter((o) => o.questionId === qId);
-      let selectedOption: (typeof qOptions)[0];
-
-      if (selectedCorrectIndices.includes(qi)) {
-        // Pick correct answer
-        selectedOption = qOptions.find((o) => o.correct)!;
-      } else {
-        // Pick wrong answer
-        selectedOption = qOptions.find((o) => !o.correct)!;
+      // Pick a correct answer for the questions answered correctly, a wrong
+      // one for the rest
+      const wantCorrect = selectedCorrectIndices.includes(qi);
+      const selectedOption = qOptions.find((o) => o.correct === wantCorrect);
+      if (!selectedOption) {
+        throw new Error(
+          `Question ${qId} has no ${wantCorrect ? "correct" : "wrong"} option`
+        );
       }
 
       db.insert(schema.quizAnswers)
@@ -2268,8 +2267,7 @@ This course is still in draft while the cluster examples are rewritten against t
   // ─── Purchases ───
   // Individual purchases for enrolled students
 
-  const [purchase1] = db
-    .insert(schema.purchases)
+  db.insert(schema.purchases)
     .values({
       userId: students[0].id, // Emma — bought course 1 individually
       courseId: course1.id,
