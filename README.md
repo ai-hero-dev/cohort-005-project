@@ -44,6 +44,7 @@ The app will be running at `http://localhost:5173`.
 | `npm run test`               | Run tests with Vitest                       |
 | `npm run test:watch`         | Run tests in watch mode                     |
 | `npm run test:mutation`      | Mutation testing (Stryker) on changed lines |
+| `npm run check:console`      | Print the browser console for one route     |
 | `npm run lint:oxlint`        | Lint the repository with oxlint             |
 | `npm run check:file-size`    | Block staged files over the token budget    |
 | `npm run typecheck`          | Type-check the project                      |
