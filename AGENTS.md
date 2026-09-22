@@ -50,6 +50,14 @@ that your correction can affect.
 
 To read the report, see the `mutation-testing` skill.
 
+### About agent-browser
+
+agent-browser lets you drive a real browser through the app from the
+terminal: open a page, click, and read the DOM back. Use it to check a change
+that `typecheck` and `test` cannot see, and to answer a question about the
+page yourself rather than asking the person you are working for. See
+`docs/agents/agent-browser.md`.
+
 ## When something breaks
 
 | Symptom                                         | Cause                                                                                                  |
