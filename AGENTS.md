@@ -45,6 +45,14 @@ that your correction can affect.
 
 To read the report, see the `mutation-testing` skill.
 
+### About `npm run check:dashboards`
+
+This command drives a real browser through the app with agent-browser,
+screenshots `/dashboard` as three users, and reads the DOM back for each. Use
+it to check a change you cannot check from the terminal, and to answer a
+question about the page yourself rather than asking the person you are
+working for. See `docs/agents/agent-browser.md`.
+
 ### About `npm run check:console`
 
 This command opens one route in a headless browser and prints the browser

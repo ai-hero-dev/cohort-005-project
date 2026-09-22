@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:mutation": "tsx scripts/mutate-diff.ts",
     "check:console": "tsx scripts/console-loop.ts",
+    "check:dashboards": "bash .github/scripts/inspect-dashboards.sh",
     "lint:oxlint": "oxlint -c .oxlintrc.json",
     "check:file-size": "./scripts/check-file-size.sh",
     "db:generate": "drizzle-kit generate",
