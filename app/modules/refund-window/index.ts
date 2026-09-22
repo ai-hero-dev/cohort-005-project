@@ -1,4 +1,9 @@
 import { splitRevenue } from "~/lib/analytics";
+import {
+  calendarDay,
+  calendarDayAfter,
+  wholeDaysBetween,
+} from "./lib/calendar-days";
 
 // ─── The refund window ───
 //
@@ -13,8 +18,6 @@ import { splitRevenue } from "~/lib/analytics";
 
 /** The length of the refund window, in whole calendar days. */
 export const REFUND_WINDOW_DAYS = 14;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** A purchase, reduced to the four things the window cares about. */
 export type PurchaseInWindow = {
@@ -47,32 +50,10 @@ export type RefundExposure = {
   courses: ExposedCourse[];
 };
 
-/**
- * The window is counted in whole calendar days, not hours: somebody who buys
- * at 23:00 gets the whole of their fourteenth day. It is the same count the
- * course page and the refund action make: the server's calendar day, moved
- * on with `setDate`.
- */
-function calendarDay(when: Date): string {
-  const month = String(when.getMonth() + 1).padStart(2, "0");
-  const day = String(when.getDate()).padStart(2, "0");
-  return `${when.getFullYear()}-${month}-${day}`;
-}
-
+// The window is counted in whole days, not hours: somebody who buys at 23:00
+// gets the whole of their fourteenth day.
 function lastDayOfWindow(purchasedAt: string): string {
-  const deadline = new Date(purchasedAt);
-  deadline.setDate(deadline.getDate() + REFUND_WINDOW_DAYS);
-  return calendarDay(deadline);
-}
-
-// Two `YYYY-MM-DD` labels, both read as midnight UTC, so no clock change can
-// make a day 23 or 25 hours long.
-function wholeDaysBetween(from: string, to: string): number {
-  return Math.round(
-    (new Date(`${to}T00:00:00.000Z`).getTime() -
-      new Date(`${from}T00:00:00.000Z`).getTime()) /
-      MS_PER_DAY
-  );
+  return calendarDayAfter(purchasedAt, REFUND_WINDOW_DAYS);
 }
 
 /**
