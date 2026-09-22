@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Explore verdict",
+  "description": "The structured output of the explore workflow. The workflow branches on `tag`, so `tag` is a closed enum: a value outside it is not a different answer, it is a malformed one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tag", "shape", "one_liner"],
+  "properties": {
+    "tag": {
+      "type": "string",
+      "description": "The call. `easy-call` means the factory may build this unattended. Anything else stops and waits for a person.",
+      "enum": ["easy-call", "needs-a-human", "blocked"]
+    },
+    "shape": {
+      "type": "string",
+      "description": "What kind of change this is. Names the work so a human scanning the ticket queue knows what they are looking at.",
+      "enum": [
+        "service-module",
+        "route-only",
+        "ui-only",
+        "schema-change",
+        "cross-cutting",
+        "unclear"
+      ]
+    },
+    "one_liner": {
+      "type": "string",
+      "description": "One sentence saying why this tag and not another. This is the line a human reads when the run halts.",
+      "maxLength": 240
+    }
+  }
+}
