@@ -1,0 +1,241 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "jsx-a11y", "import", "vitest"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["drizzle/**", ".agents/**", ".claude/**"],
+  "rules": {
+    // Correctness rules that go beyond the coding standards.
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "jsx-a11y/control-has-associated-label": "off",
+    "vitest/require-mock-type-parameters": "off",
+    "vitest/require-to-throw-message": "off",
+
+    // The coding standards, translated from the ESLint plan.
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-inferrable-types": "error",
+    "typescript/consistent-type-definitions": ["error", "type"],
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-console": [
+      "error",
+      {
+        "allow": ["error"]
+      }
+    ],
+    "no-throw-literal": "error",
+    "no-useless-catch": "error",
+    "prefer-arrow-callback": "error",
+    "max-lines": [
+      "error",
+      {
+        "max": 500,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-lines-per-function": [
+      "error",
+      {
+        "max": 50,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-params": ["error", 3],
+    "max-depth": ["error", 3],
+    "id-denylist": [
+      "error",
+      "req",
+      "res",
+      "e",
+      "err",
+      "ctx",
+      "btn",
+      "msg",
+      "val"
+    ],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/jsx-key": "error",
+    "react/no-array-index-key": "error",
+    "react/jsx-no-target-blank": "error",
+    "react/no-danger": "error",
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/label-has-associated-control": "error",
+    "jsx-a11y/tabindex-no-positive": "error",
+    "jsx-a11y/no-static-element-interactions": "error",
+    "jsx-a11y/click-events-have-key-events": "error",
+    "jsx-a11y/no-autofocus": [
+      "error",
+      {
+        "ignoreNonDOM": true
+      }
+    ],
+    "import/no-default-export": "error",
+    "vitest/no-disabled-tests": "error",
+    "vitest/no-focused-tests": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "app/routes/**",
+        "app/root.tsx",
+        "app/routes.ts",
+        "*.config.*",
+        "*.conf.*"
+      ],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "max-lines-per-function": "off"
+      }
+    },
+    {
+      "files": ["scripts/**", "request-logger/**"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["request-logger/render.ts", "request-logger/render.test.ts"],
+      "rules": {
+        "typescript/no-explicit-any": "off"
+      }
+    },
+    // Files already over a size limit. Remove each entry once the file is split.
+    {
+      "files": [
+        "app/lib/comments.server.test.ts",
+        "app/lib/refunds.server.test.ts",
+        "app/lib/refunds.server.ts",
+        "app/modules/instructor-analytics/lib/instructor-analytics.ts",
+        "app/modules/instructor-analytics/tests/instructor-analytics.test.ts",
+        "app/routes/admin.categories.tsx",
+        "app/routes/courses.$slug.lessons.$lessonId.tsx",
+        "app/routes/courses.$slug.purchase.tsx",
+        "app/routes/courses.$slug.tsx",
+        "app/routes/courses.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.quiz.tsx",
+        "app/routes/instructor.$courseId.tsx",
+        "app/routes/instructor.analytics.tsx",
+        "request-logger/agents.test.ts",
+        "request-logger/agents.ts",
+        "request-logger/render.ts",
+        "scripts/seed.ts"
+      ],
+      "rules": {
+        "max-lines": "off"
+      }
+    },
+    {
+      "files": [
+        "app/components/comment-thread.tsx",
+        "app/components/dev-ui.tsx",
+        "app/components/monaco-markdown-editor.tsx",
+        "app/components/notification-feed.tsx",
+        "app/components/sidebar.tsx",
+        "app/components/star-rating.tsx",
+        "app/components/ui/chart.tsx",
+        "app/components/youtube-player.tsx",
+        "app/lib/comments.server.ts",
+        "app/lib/notification-feed.knock.ts",
+        "app/lib/notifications.fake.server.ts",
+        "app/lib/notifications.knock.server.ts",
+        "app/lib/refunds.server.ts",
+        "app/lib/seat-claims.server.ts",
+        "app/modules/instructor-analytics/lib/instructor-analytics.ts",
+        "app/routes/admin.categories.tsx",
+        "app/routes/admin.courses.tsx",
+        "app/routes/admin.refunds.tsx",
+        "app/routes/admin.users.tsx",
+        "app/routes/courses.$slug.$moduleId.tsx",
+        "app/routes/courses.$slug.lessons.$lessonId.tsx",
+        "app/routes/courses.$slug.purchase.tsx",
+        "app/routes/courses.$slug.tsx",
+        "app/routes/courses.$slug.welcome.tsx",
+        "app/routes/courses.tsx",
+        "app/routes/dashboard.tsx",
+        "app/routes/home.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.quiz.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.tsx",
+        "app/routes/instructor.$courseId.modules.$moduleId.tsx",
+        "app/routes/instructor.$courseId.students.tsx",
+        "app/routes/instructor.$courseId.tsx",
+        "app/routes/instructor.analytics.tsx",
+        "app/routes/instructor.new.tsx",
+        "app/routes/instructor.questions.tsx",
+        "app/routes/instructor.tsx",
+        "app/routes/layout.app.tsx",
+        "app/routes/login.tsx",
+        "app/routes/redeem.$code.tsx",
+        "app/routes/saved.tsx",
+        "app/routes/settings.tsx",
+        "app/routes/signup.tsx",
+        "app/routes/team.tsx",
+        "request-logger/agents.ts",
+        "request-logger/config.ts",
+        "request-logger/proxy.ts",
+        "request-logger/render.ts",
+        "scripts/seed.ts"
+      ],
+      "rules": {
+        "max-lines-per-function": "off"
+      }
+    },
+    {
+      "files": [
+        "app/lib/bookmarks.server.ts",
+        "app/lib/comments.server.ts",
+        "app/lib/enrollments.server.ts",
+        "app/lib/notes.server.ts",
+        "app/lib/notification-preferences.server.ts",
+        "app/lib/ppp.ts",
+        "app/lib/refunds.server.ts",
+        "app/lib/seat-claims.server.ts",
+        "app/lib/utils.ts",
+        "app/modules/instructor-analytics/lib/instructor-analytics.ts",
+        "app/modules/instructor-analytics/tests/instructor-analytics.test.ts",
+        "app/modules/permissions/lib/course-permissions.ts",
+        "app/modules/permissions/tests/course-permissions.test.ts",
+        "app/routes/admin.users.tsx",
+        "app/routes/courses.$slug.purchase.tsx",
+        "app/routes/courses.tsx",
+        "app/routes/home.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.quiz.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.tsx",
+        "app/routes/instructor.$courseId.tsx",
+        "app/routes/instructor.new.tsx",
+        "request-logger/agents.ts",
+        "scripts/push-knock-workflows.ts",
+        "scripts/seed.ts"
+      ],
+      "rules": {
+        "max-params": "off"
+      }
+    },
+    {
+      "files": [
+        "app/routes/courses.$slug.lessons.$lessonId.tsx",
+        "request-logger/render.ts"
+      ],
+      "rules": {
+        "max-depth": "off"
+      }
+    }
+  ]
+}
