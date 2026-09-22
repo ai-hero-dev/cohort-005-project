@@ -1,19 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
   REFUND_WINDOW_DAYS,
+  daysLeftInRefundWindow,
+  isWithinRefundWindow,
+  lastDayOfRefundWindow,
   summariseRefundExposure,
   type PurchaseInWindow,
 } from "../index";
 
-// The first test in this repository that could not have been written before.
-// The same arithmetic used to sit inside the analytics loader, where today
-// came from `new Date()` and the rows came from the database, so there was
-// nothing to call. Here the clock is an argument.
+// One module, one test file. The day arithmetic under the window used to be a
+// module of its own with tests of its own — `addDays` and `daysBetween`, an
+// interface nobody but this module ever called. Those tests are here now, and
+// they go through the window rather than around it: a month end and a leap day
+// are things the window has to get right, not facts about a helper.
+//
+// The oldest tests in this file are still the first tests in this repository
+// that could not have been written before. The arithmetic used to sit inside
+// the analytics loader, where today came from `new Date()` and the rows came
+// from the database, so there was nothing to call. Here the moment is an
+// argument.
 
 const TODAY = "2026-03-15";
 
-function clockAt(day: string) {
-  return { today: () => day };
+function at(day: string): Date {
+  return new Date(`${day}T12:00:00.000Z`);
 }
 
 function purchase(overrides: Partial<PurchaseInWindow> = {}): PurchaseInWindow {
@@ -34,7 +44,7 @@ function summarise(
   return summariseRefundExposure({
     purchases,
     totalGrossCents,
-    clock: clockAt(today),
+    now: at(today),
   });
 }
 
@@ -213,5 +223,89 @@ describe("summariseRefundExposure", () => {
     ]);
 
     expect(exposure.purchaseCount).toBe(1);
+  });
+});
+
+describe("lastDayOfRefundWindow", () => {
+  it("is fourteen whole days after the purchase", () => {
+    expect(lastDayOfRefundWindow("2026-03-01T09:00:00.000Z")).toBe(
+      "2026-03-15"
+    );
+  });
+
+  it("ignores the time of day the purchase was made at", () => {
+    expect(lastDayOfRefundWindow("2026-03-01T23:45:00.000Z")).toBe(
+      "2026-03-15"
+    );
+  });
+
+  it("crosses a month end", () => {
+    expect(lastDayOfRefundWindow("2026-02-25T09:00:00.000Z")).toBe(
+      "2026-03-11"
+    );
+  });
+
+  it("crosses a leap day", () => {
+    expect(lastDayOfRefundWindow("2028-02-20T09:00:00.000Z")).toBe(
+      "2028-03-05"
+    );
+  });
+
+  it("crosses a year end", () => {
+    expect(lastDayOfRefundWindow("2026-12-25T09:00:00.000Z")).toBe(
+      "2027-01-08"
+    );
+  });
+});
+
+describe("isWithinRefundWindow", () => {
+  const purchasedAt = "2026-03-01T09:00:00.000Z";
+
+  it("is open on the day of the purchase", () => {
+    expect(isWithinRefundWindow(purchasedAt, at("2026-03-01"))).toBe(true);
+  });
+
+  it("is open on the last day of the window", () => {
+    expect(isWithinRefundWindow(purchasedAt, at("2026-03-15"))).toBe(true);
+  });
+
+  it("is open at one second to midnight on the last day", () => {
+    expect(
+      isWithinRefundWindow(purchasedAt, new Date("2026-03-15T23:59:59.000Z"))
+    ).toBe(true);
+  });
+
+  it("is closed the next morning", () => {
+    expect(
+      isWithinRefundWindow(purchasedAt, new Date("2026-03-16T00:00:01.000Z"))
+    ).toBe(false);
+  });
+});
+
+describe("daysLeftInRefundWindow", () => {
+  const purchasedAt = "2026-03-01T09:00:00.000Z";
+
+  it("is the whole window on the day of the purchase", () => {
+    expect(daysLeftInRefundWindow(purchasedAt, at("2026-03-01"))).toBe(
+      REFUND_WINDOW_DAYS
+    );
+  });
+
+  it("counts down a day at a time", () => {
+    expect(daysLeftInRefundWindow(purchasedAt, at("2026-03-14"))).toBe(1);
+  });
+
+  it("is zero on the last day", () => {
+    expect(daysLeftInRefundWindow(purchasedAt, at("2026-03-15"))).toBe(0);
+  });
+
+  it("does not go negative once the window has closed", () => {
+    expect(daysLeftInRefundWindow(purchasedAt, at("2026-04-01"))).toBe(0);
+  });
+
+  it("counts across a month end", () => {
+    expect(
+      daysLeftInRefundWindow("2026-02-25T09:00:00.000Z", at("2026-03-01"))
+    ).toBe(10);
   });
 });

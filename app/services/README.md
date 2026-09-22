@@ -55,3 +55,23 @@ The interface is the test surface. If a caller can reach any function in the
 module, then every function in the module is public, and changing one of them
 is a change to the whole codebase's contract. Hiding the implementation is what
 lets you rewrite it.
+
+## A module can be too small
+
+The four rules above are about not letting a module leak. They say nothing
+about how many modules there should be, and splitting is not automatically an
+improvement.
+
+A module earns its place when deleting it would concentrate complexity rather
+than move it. Two modules that are always read together, where one exists to
+hand something to the other, fail that test — and an interface with one
+implementation is a seam you have guessed at, not one you have got.
+
+`refund-window` used to be two: the window, and a `clock` module behind a
+`Clock` interface. See
+[ADR 0021](../../docs/adr/0021-the-refund-window-owns-its-own-days.md) for why
+they are one now. The short version: the merged module exports fewer names than
+the two it replaced, and it is the exported names you are on the hook for.
+
+When you are about to split a module, ask what the second caller of the new
+half will be. If you cannot name one, you are adding an import, not a boundary.

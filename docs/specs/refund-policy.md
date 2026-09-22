@@ -101,6 +101,11 @@ that reads the machine. Nothing in the Policy calls `new Date()`. `clock` also
 owns the day arithmetic, which `refund-window` moves onto, so there is one
 place in the codebase that knows how to add fourteen days.
 
+> **Later.** The first half of this held; the second half did not. Time still
+> comes in from outside, as a `Date` argument. The `clock` module and its
+> interface were merged back into `refund-window`. See
+> [ADR 0021](../adr/0021-the-refund-window-owns-its-own-days.md).
+
 **UTC, and whole days.** Unchanged, and still what ADR-0014 records as
 superseded. Comparing `YYYY-MM-DD` strings is the comparison.
 

@@ -21,7 +21,6 @@ import {
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
 import { getDiscountForCountry } from "~/lib/ppp";
-import { systemClock } from "~/services/clock";
 import { decideRefund, type RefundRefusal } from "~/services/refund-policy";
 import { formatPrice } from "~/lib/utils";
 
@@ -249,7 +248,7 @@ export async function action({ params, request }: Route.ActionArgs) {
       hasOpenRefund: getOpenRefund(purchase.id) !== undefined,
     },
     (country) => getDiscountForCountry(country) > 0,
-    systemClock
+    new Date()
   );
 
   if (!decision.eligible) {

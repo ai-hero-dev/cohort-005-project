@@ -6,8 +6,7 @@ import { decideRefund, type RefundFacts } from "../index";
 // router context and a database. The five conditions below were never
 // checked by anything but a person clicking through the app.
 
-const TODAY = "2026-03-15";
-const clock = { today: () => TODAY };
+const NOW = new Date("2026-03-15T12:00:00.000Z");
 const nothingIsDiscounted = () => false;
 const everythingIsDiscounted = () => true;
 
@@ -27,7 +26,7 @@ function facts(overrides: Partial<RefundFacts> = {}): RefundFacts {
 }
 
 function decide(overrides: Partial<RefundFacts> = {}) {
-  return decideRefund(facts(overrides), nothingIsDiscounted, clock);
+  return decideRefund(facts(overrides), nothingIsDiscounted, NOW);
 }
 
 describe("decideRefund", () => {
@@ -126,7 +125,7 @@ describe("decideRefund", () => {
       const decision = decideRefund(
         facts({ amountPaidCents: 10_000, listPriceCents: 10_000 }),
         nothingIsDiscounted,
-        clock
+        NOW
       );
 
       expect(decision).toMatchObject({ refundableCents: 10_000 });
@@ -136,7 +135,7 @@ describe("decideRefund", () => {
       const decision = decideRefund(
         facts({ amountPaidCents: 4_000, listPriceCents: 10_000 }),
         everythingIsDiscounted,
-        clock
+        NOW
       );
 
       expect(decision).toMatchObject({ refundableCents: 4_000 });
@@ -151,7 +150,7 @@ describe("decideRefund", () => {
           asked.push(country);
           return false;
         },
-        clock
+        NOW
       );
 
       expect(asked).toEqual(["IN"]);

@@ -1,4 +1,3 @@
-import { type Clock } from "~/services/clock";
 import {
   REFUND_WINDOW_DAYS,
   daysLeftInRefundWindow,
@@ -23,9 +22,9 @@ import {
 // asked how much of the Course the Learner had finished, so a Learner who
 // could not see the button could still post to it.
 //
-// It takes plain facts and a `Clock`. It reads nothing and writes nothing, so
-// the caller decides where the facts come from, and a test can ask it about
-// any day it likes.
+// It takes plain facts and the moment to judge them at. It reads nothing and
+// writes nothing, so the caller decides where the facts come from, and a test
+// can ask it about any day it likes.
 
 /** Everything the Policy needs to know about one Purchase. */
 export type RefundFacts = {
@@ -86,7 +85,7 @@ export type RefundDecision =
 export function decideRefund(
   facts: RefundFacts,
   isRegionalPrice: (country: string | null) => boolean,
-  clock: Clock
+  now: Date
 ): RefundDecision {
   if (facts.hasOpenRefund) {
     return {
@@ -96,7 +95,7 @@ export function decideRefund(
     };
   }
 
-  if (!isWithinRefundWindow(facts.purchasedAt, clock)) {
+  if (!isWithinRefundWindow(facts.purchasedAt, now)) {
     return {
       eligible: false,
       refusedBy: "window-closed",
@@ -139,6 +138,6 @@ export function decideRefund(
       ? facts.amountPaidCents
       : facts.listPriceCents,
     lastDayInWindow: lastDayOfRefundWindow(facts.purchasedAt),
-    daysLeft: daysLeftInRefundWindow(facts.purchasedAt, clock),
+    daysLeft: daysLeftInRefundWindow(facts.purchasedAt, now),
   };
 }
