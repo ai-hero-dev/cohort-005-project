@@ -142,7 +142,7 @@ function makeRequest(headers: Record<string, string> = {}) {
 /** Signs in through the real session cookie, as the DevUI panel does. */
 async function signedInRequest(userId: number, headerCountry?: string) {
   const setCookie = await setCurrentUserId(makeRequest(), userId);
-  const headers: Record<string, string> = { Cookie: setCookie.split(";")[0]! };
+  const headers: Record<string, string> = { Cookie: setCookie.split(";")[0] };
   if (headerCountry) headers["CF-IPCountry"] = headerCountry;
   return makeRequest(headers);
 }
