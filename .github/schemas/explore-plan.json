@@ -12,11 +12,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["number", "comment"],
+        "required": ["number", "tag", "comment"],
         "properties": {
           "number": {
             "type": "integer",
             "description": "The issue this entry is for."
+          },
+          "tag": {
+            "type": "string",
+            "enum": ["easy-call", "needs-a-human", "blocked"],
+            "description": "The call. `easy-call` hands the issue straight to the implementer. Anything else stops and waits for a person. A duplicate takes the tag of the issue it duplicates."
           },
           "duplicate_of": {
             "type": "integer",

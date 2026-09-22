@@ -34,9 +34,32 @@ name: Agent — Explore The Tickets
 #   run in front tells you which one you have, and it tells you in prose a
 #   human can read in thirty seconds instead of a diff they have to review.
 #
+# AND THEN IT BRANCHES ON ITS OWN ANSWER
+#   Every entry in the plan carries a `tag`, a closed enum in
+#   .github/schemas/explore-plan.json, and the apply job branches on it:
+#
+#     easy-call       →  swap `agent:explore` for `agent:implement`, which is
+#                        the trigger for agent-implement.yml. The factory
+#                        keeps going without being asked.
+#     anything else   →  swap it for `needs-a-human` and stop. Somebody has
+#                        to come and look.
+#     a duplicate     →  closed, whatever its tag.
+#
+#   That is a real if/else in the apply job, on a value the agent chose. Not a
+#   sentence in a prompt asking it to be careful. And a plan with a tag the
+#   workflow does not recognise is refused whole: nothing is written, every
+#   label stays on, the run goes red and the next label tries again.
+#
 # WHAT IT NEEDS
 #   secrets.ANTHROPIC_API_KEY — the agent's auth token.
 #   secrets.GITHUB_TOKEN — supplied by Actions; scoped per job below.
+#   secrets.FACTORY_PAT — a fine-grained personal access token with Issues:
+#     write on this repository. Only the `agent:implement` hand-off uses it.
+#     A label applied with the built-in GITHUB_TOKEN does NOT start another
+#     workflow. GitHub suppresses that on purpose, so a workflow cannot
+#     trigger itself into a loop. The chain from explore to implement is
+#     exactly the loop we do want, so a token that is not the built-in one
+#     has to apply it.
 
 on:
   issues:
@@ -154,12 +177,27 @@ jobs:
                that need separate changes are related, not duplicates: both
                survive.
 
-            4. COMMENT. Write one `comment` per issue, in Markdown.
+            4. VERDICT. Give each issue one `tag`. The workflow branches on
+               it.
+               - `easy-call`: the right change is clear, nobody would
+                 disagree with any decision in it, and you would be happy
+                 for the pull request to land without you. It goes straight
+                 to the implementer.
+               - `needs-a-human`: somebody has to decide something first (a
+                 migration, a name, a policy, a trade), or the issue's
+                 claims did not hold up.
+               - `blocked`: waiting on something outside this repository,
+                 or on information only the reporter has.
+               A duplicate takes its survivor's tag. A one-way door takes
+               `needs-a-human` or `blocked`. If you are weighing it up, that
+               weighing is the answer: it is not an easy call.
+
+            5. COMMENT. Write one `comment` per issue, in Markdown.
                - A duplicate's comment is ONE line: why it is the same issue.
                  The workflow adds "Closed as duplicate of #N." under it.
                - A survivor's comment is skimmable, about 20 lines, and every
                  claim in it is verified:
-                 - a one-line summary;
+                 - the tag and a one-line summary of why this tag;
                  - the blast radius, in prose: what it touches (modules under
                    app/services/, routes, tables), naming only the 2–3
                    places that matter. A schema change or a migration goes
@@ -213,6 +251,10 @@ jobs:
                  then "The plan needs exactly one entry for each of \($batch)."
                  else empty end),
 
+                # A tag the branch below knows.
+                ($plan[] | select(.tag | IN("easy-call", "needs-a-human", "blocked") | not)
+                 | "#\(.number) has a tag this workflow does not know: \(.tag)."),
+
                 # Something to post.
                 ($plan[] | select((.comment // "") | test("\\S") | not)
                  | "#\(.number) has an empty comment."),
@@ -232,28 +274,48 @@ jobs:
           fi
 
       - name: Apply the plan
+        env:
+          # FACTORY_PAT, not GITHUB_TOKEN, for the `agent:implement` label
+          # only. A label applied by the built-in token does not fire
+          # `issues: labeled`, so agent-implement.yml would never wake up and
+          # the chain would end here, silently, with a green tick.
+          FACTORY_PAT: ${{ secrets.FACTORY_PAT }}
         run: |
           set -euo pipefail
+          # A fresh clone of this repository does not have this label yet.
+          gh label create "needs-a-human" --color D93F0B \
+            --description "The factory stopped here" || true
+
           # Survivors first, so "closed as duplicate of #N" points at an issue
           # that already has its findings on it.
           for n in $(jq -r '.issues | sort_by([.duplicate_of != null, .number]) | .[].number' /tmp/plan.json); do
             entry="$(jq -c --argjson n "$n" '.issues[] | select(.number == $n)' /tmp/plan.json)"
             dup="$(jq -r '.duplicate_of // empty' <<< "$entry")"
+            tag="$(jq -r '.tag' <<< "$entry")"
 
             if [ -n "$dup" ]; then
               next="Closed as duplicate of #$dup."
+            elif [ "$tag" = "easy-call" ]; then
+              next="Easy call. Handed to the implementer. Nobody is being asked first."
             else
-              next="Explored. Nothing was built. Label \`agent:implement\` when you are happy."
+              next="Stopped at \`$tag\`. Settle the open questions, then label \`agent:implement\` yourself."
             fi
 
             jq -r '.comment' <<< "$entry" > /tmp/comment.md
             printf '\n\n---\n\n_%s_ [Logs](%s)\n' "$next" "$RUN_URL" >> /tmp/comment.md
             gh issue comment "$n" --body-file /tmp/comment.md
 
-            # Off the label, so the next batch does not explore it again.
-            gh issue edit "$n" --remove-label "agent:explore"
+            # The branch. Every path takes `agent:explore` off, so the next
+            # batch does not explore it again.
             if [ -n "$dup" ]; then
+              gh issue edit "$n" --remove-label "agent:explore"
               gh api --method PATCH "repos/$GH_REPO/issues/$n" \
                 -f state=closed -f state_reason=duplicate --silent
+            elif [ "$tag" = "easy-call" ]; then
+              GH_TOKEN="$FACTORY_PAT" gh issue edit "$n" \
+                --remove-label "agent:explore" --add-label "agent:implement"
+            else
+              gh issue edit "$n" \
+                --remove-label "agent:explore" --add-label "needs-a-human"
             fi
           done
