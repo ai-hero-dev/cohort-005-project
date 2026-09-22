@@ -78,6 +78,13 @@
       "when": 1790084518883,
       "tag": "0010_faulty_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790085573076,
+      "tag": "0011_wandering_proudstar",
+      "breakpoints": true
     }
   ]
 }

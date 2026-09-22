@@ -5,7 +5,7 @@ import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
-import { eq, and, or, sql, desc } from "drizzle-orm";
+import { eq, and, or, sql, desc, isNull } from "drizzle-orm";
 import { db } from "~/db";
 import {
   users,
@@ -15,6 +15,7 @@ import {
   lessonProgress,
   teams,
   teamMembers,
+  notifications,
   TeamMemberRole,
   LessonProgressStatus,
 } from "~/db/schema";
@@ -171,6 +172,32 @@ function getRecentlyProgressedCourses(userId: number, limit: number = 3) {
     .all();
 }
 
+// How many notifications the bell panel holds. Older ones stay in the table —
+// they just stop being worth a scroll.
+const NOTIFICATION_PANEL_LIMIT = 20;
+
+function getRecentNotifications(userId: number) {
+  return db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt), desc(notifications.id))
+    .limit(NOTIFICATION_PANEL_LIMIT)
+    .all();
+}
+
+function getUnreadNotificationCount(userId: number) {
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(notifications)
+    .where(
+      and(eq(notifications.userId, userId), isNull(notifications.readAt))
+    )
+    .get();
+
+  return row?.count ?? 0;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const users = getAllUsers();
   const currentUserId = await getCurrentUserId(request);
@@ -198,8 +225,24 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : [];
 
+  const recentNotifications = currentUserId
+    ? getRecentNotifications(currentUserId).map((notification) => ({
+        id: notification.id,
+        category: notification.category,
+        title: notification.title,
+        body: notification.body,
+        linkUrl: notification.linkUrl,
+        createdAt: notification.createdAt,
+        read: notification.readAt !== null,
+      }))
+    : [];
+
   return {
     users: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
+    notifications: recentNotifications,
+    unreadNotificationCount: currentUserId
+      ? getUnreadNotificationCount(currentUserId)
+      : 0,
     currentUser: currentUser
       ? {
           id: currentUser.id,
@@ -221,6 +264,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     users,
     currentUser,
     recentCourses,
+    notifications: notificationItems,
+    unreadNotificationCount,
     devCountry,
     countryTierInfo,
     countries,
@@ -233,6 +278,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        notifications={notificationItems}
+        unreadNotificationCount={unreadNotificationCount}
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />

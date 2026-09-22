@@ -5,9 +5,11 @@ import { z } from "zod";
 import type { Route } from "./+types/admin.refunds";
 import { parseFormData } from "~/lib/validation";
 import {
+  NotificationCategory,
   RefundStatus,
   courses,
   enrollments,
+  notifications,
   purchases,
   refunds,
   users,
@@ -70,6 +72,48 @@ function getPurchaseById(id: number) {
 
 function getCourseById(id: number) {
   return db.select().from(courses).where(eq(courses.id, id)).get();
+}
+
+// ─── In-app to external bridge ───
+// The notification row is the thing the bell reads. Ably is the bridge that
+// carries the same event out of the app, for a learner who is not looking at
+// it. Without ABLY_API_KEY there is no bridge — the in-app half still works,
+// and nothing here fails.
+async function publishNotificationToAbly(input: {
+  userId: number;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+}) {
+  const apiKey = process.env.ABLY_API_KEY;
+  if (!apiKey) return;
+
+  try {
+    const response = await fetch(
+      `https://rest.ably.io/channels/notifications:${input.userId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(apiKey).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: input.category,
+          data: { title: input.title, body: input.body },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `[ably] publish failed with ${response.status} ${response.statusText}`
+      );
+    }
+  } catch (error) {
+    // A vendor being unreachable must not fail a refund decision. The row is
+    // already written, and the bell reads the row.
+    console.error("[ably] could not publish notification", error);
+  }
 }
 
 export function meta() {
@@ -136,6 +180,23 @@ export async function action({ request }: Route.ActionArgs) {
       .where(eq(refunds.id, refund.id))
       .run();
 
+    db.insert(notifications)
+      .values({
+        userId: purchase.userId,
+        category: NotificationCategory.Refund,
+        title: "Your refund was declined",
+        body: `We could not refund "${course.title}". Reply to your receipt if you think that is wrong.`,
+        linkUrl: "/settings",
+      })
+      .run();
+
+    await publishNotificationToAbly({
+      userId: purchase.userId,
+      category: NotificationCategory.Refund,
+      title: "Your refund was declined",
+      body: `We could not refund "${course.title}".`,
+    });
+
     return { ok: true as const, intent: "decline" as const };
   }
 
@@ -166,6 +227,23 @@ export async function action({ request }: Route.ActionArgs) {
       )
     )
     .run();
+
+  db.insert(notifications)
+    .values({
+      userId: purchase.userId,
+      category: NotificationCategory.Refund,
+      title: "Your refund was approved",
+      body: `${formatPrice(amountRefunded)} is on its way back to you for "${course.title}".`,
+      linkUrl: "/settings",
+    })
+    .run();
+
+  await publishNotificationToAbly({
+    userId: purchase.userId,
+    category: NotificationCategory.Refund,
+    title: "Your refund was approved",
+    body: `${formatPrice(amountRefunded)} is on its way back to you for "${course.title}".`,
+  });
 
   return { ok: true as const, intent: "approve" as const };
 }
