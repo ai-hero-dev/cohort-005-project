@@ -133,7 +133,7 @@ export type Resolution =
 export const OTHER_ID = "other";
 export const OTHER_LABEL = "Other, or not sure";
 export const ISSUE_URL =
-  "https://github.com/ai-hero-dev/ai-coding-crash-course/issues/new";
+  "https://github.com/ai-hero-dev/cohort-005-project/issues/new";
 
 /**
  * The option next to "Other" at the provider question: a student whose
