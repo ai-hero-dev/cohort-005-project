@@ -8,6 +8,7 @@ import {
   type NotificationItem,
 } from "~/components/notification-bell";
 import {
+  Bookmark,
   BookOpen,
   ChartColumn,
   LayoutDashboard,
@@ -67,6 +68,12 @@ const navItems: NavItem[] = [
     label: "Dashboard",
     to: "/dashboard",
     icon: <LayoutDashboard className="size-4" />,
+    roles: [UserRole.Student],
+  },
+  {
+    label: "Saved",
+    to: "/saved",
+    icon: <Bookmark className="size-4" />,
     roles: [UserRole.Student],
   },
   {
