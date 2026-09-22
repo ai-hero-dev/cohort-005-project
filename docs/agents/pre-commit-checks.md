@@ -2,13 +2,14 @@
 
 `.husky/pre-commit` runs, in order:
 
-| Step                      | What it does                               |
-| ------------------------- | ------------------------------------------ |
-| `npx lint-staged`         | Prettier over the staged files, in place   |
-| `npm run typecheck`       | `react-router typegen` then `tsc`          |
-| `npm run test`            | The whole Vitest suite                     |
-| `npm run lint:oxlint`     | oxlint over the whole repository           |
-| `npm run check:file-size` | Blocks a staged file over the token budget |
+| Step                      | What it does                                  |
+| ------------------------- | --------------------------------------------- |
+| `npx lint-staged`         | Prettier over the staged files, in place      |
+| `npm run typecheck`       | `react-router typegen` then `tsc`             |
+| `npm run test`            | The whole Vitest suite                        |
+| `npm run lint:oxlint`     | oxlint over the whole repository              |
+| `npm run lint:boundaries` | dependency-cruiser over the module boundaries |
+| `npm run check:file-size` | Blocks a staged file over the token budget    |
 
 Husky installs itself from the `prepare` script, so `npm install` is all a
 fresh clone needs.
@@ -91,3 +92,21 @@ edit the lesson.
 `git commit --no-verify` skips every hook. Use it when you know the check is
 wrong, not when you are in a hurry — a check you route around every day is a
 check you should delete or fix.
+
+## `lint:boundaries` — the module boundary
+
+`depcruise app`. Every directory under `app/services/` is a deep module. Its
+root files are its entry points, and everything in a subfolder is private —
+so `~/services/refund-window` is an import anybody may write, and
+`~/services/refund-window/lib/utc-days` is not.
+
+`.dependency-cruiser.cjs` holds the rules. They are `error`, not `warn`: a
+boundary nothing enforces is a boundary that lasts one busy afternoon.
+Unlike `lint:oxlint`, this one starts clean, so it stays at `error`.
+
+It cruises `app`, not `app/services`, because two of the four rules are about
+who is doing the importing. A route reaching into a module's `lib/` folder is
+only visible if the route is cruised too.
+
+See `app/services/README.md` for the shape the rules enforce, and the
+`setup-ts-deep-modules` skill for where they came from.

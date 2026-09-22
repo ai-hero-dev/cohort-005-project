@@ -1,7 +1,7 @@
 # Coding standards
 
 **A `CODING_STANDARDS.md` applies to the directory it sits in, and everything
-under it.** This file is the root, so the six rules below apply everywhere.
+under it.** This file is the root, so the seven rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
 
 | File                                 | Applies to                               |
@@ -135,6 +135,37 @@ ones two routes both needed live inline twice. That is the state the code is
 in. The rule above is what we are moving towards, one module at a time, and a
 change that leaves one more thing behind a callable interface than it found is
 a change in the right direction.
+
+## Import a service through its entry points, never into its subfolders
+
+Every directory under `app/services/` is a deep module. Its **entry points**
+are its root files, and they are its whole public surface. Everything in a
+subfolder — `lib/`, `tests/`, anything else you add — is implementation, and is
+private.
+
+```ts
+import { summariseRefundExposure } from "~/services/refund-window"; // yes
+import { utcDay } from "~/services/refund-window/lib/utc-days"; // no
+```
+
+This is the rule that makes the one above it worth anything. A module whose
+interface hides its implementation only hides it while nobody is allowed to
+reach past it. Give one caller a deep import and the implementation is now the
+interface, and you find that out the day you try to change it.
+
+Three things follow, and they are the ones people get wrong:
+
+- **A module's own tests go through the entry points too.** A test that imports
+  `lib/` is a test of the implementation, and it fails the next time the
+  implementation is correctly rewritten.
+- **Do not write a barrel.** An `index.ts` that re-exports the whole subtree has
+  an interface as wide as its implementation. Expose several small entry points
+  instead.
+- **Two modules that import each other are one module.** Cycles are an error.
+
+`npm run lint:boundaries` enforces all of this with dependency-cruiser, and
+`.husky/pre-commit` runs it. The rules are errors, not warnings. See
+[app/services/README.md](./app/services/README.md).
 
 ## What was taken out, and why
 

@@ -3,7 +3,7 @@ import {
   REFUND_WINDOW_DAYS,
   summariseRefundExposure,
   type PurchaseInWindow,
-} from "./refund-window";
+} from "../index";
 
 // The first test in this repository that could not have been written before.
 // The same arithmetic used to sit inside the analytics loader, where `now`
