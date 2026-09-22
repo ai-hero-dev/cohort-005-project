@@ -80,6 +80,7 @@ export function NotificationFeedProvider({
     // token on every revalidation; reconnecting on each would churn the socket.
     // Instead the feed fetches a fresh token itself just before the old one
     // expires (fetchFeedToken).
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [userId]);
 
   return <FeedContext.Provider value={feed}>{children}</FeedContext.Provider>;
@@ -139,7 +140,11 @@ export function NotificationBell() {
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="fixed inset-0 z-40"
+            role="presentation"
+            onClick={() => setOpen(false)}
+          />
           <NotificationPopover
             feed={feed}
             state={state}

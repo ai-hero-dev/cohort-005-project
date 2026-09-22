@@ -64,7 +64,7 @@ function getCourseWithDetails(id: number) {
       ? db
           .select()
           .from(lessons)
-          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid)))!)
+          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid))))
           .orderBy(lessons.position)
           .all()
       : [];
@@ -154,6 +154,7 @@ export function HydrateFallback() {
       </Card>
       <div className="space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
+          // oxlint-disable-next-line react/no-array-index-key -- placeholders never reorder
           <Skeleton key={i} className="h-12 w-full" />
         ))}
       </div>

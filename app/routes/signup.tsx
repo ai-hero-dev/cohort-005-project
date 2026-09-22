@@ -13,7 +13,7 @@ import { setCurrentUserId, getCurrentUserId } from "~/lib/session";
 import { parseFormData } from "~/lib/validation";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { defaultNotifications } from "~/lib/notifications.server";
