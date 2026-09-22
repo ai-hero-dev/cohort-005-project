@@ -37,6 +37,11 @@ export enum RefundStatus {
   Declined = "declined",
 }
 
+export enum NotificationCategory {
+  Refund = "refund",
+  Discussion = "discussion",
+}
+
 export enum TeamMemberRole {
   Admin = "admin",
   Member = "member",
@@ -372,3 +377,35 @@ export const videoWatchEvents = sqliteTable("video_watch_events", {
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
 });
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    // The one person this notification is for. Every notification has exactly
+    // one recipient — there is no broadcast row that many people share, so
+    // "read" is never ambiguous.
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    category: text("category").notNull().$type<NotificationCategory>(),
+    // One short line, shown in the bell panel. Written at the moment the event
+    // happens, never re-derived, so an old notification keeps saying what was
+    // true when it was raised.
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    // Where the bell takes you. Null when the event has nowhere to go.
+    linkUrl: text("link_url"),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    // Unread is the absence of a timestamp: readAt null means unread, and the
+    // unread count is a count of those rows. Reading is one-way — nothing in
+    // the app sets this back to null.
+    readAt: text("read_at"),
+  },
+  (table) => [
+    index("notifications_user_idx").on(table.userId),
+    index("notifications_user_read_idx").on(table.userId, table.readAt),
+  ]
+);
