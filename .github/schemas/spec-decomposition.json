@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spec decomposition",
+  "description": "The structured output of the first loop: one spec turned into an ordered queue of tickets. The workflow creates one GitHub issue per entry, in `position` order, and the chain then works through them one at a time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tickets"],
+  "properties": {
+    "tickets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "The queue, in build order. Keep it short. A queue longer than about eight is a spec that wanted decomposing into two specs.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["position", "title", "body", "shape", "depends_on"],
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Build order, starting at 1. The chain always takes the lowest open position whose dependencies are closed."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "The issue title. Say what the ticket delivers, not which layer it edits."
+          },
+          "body": {
+            "type": "string",
+            "description": "The ticket. Markdown, with a `## What` and a `## Done when` — the second is what the review workflow checks the pull request against, so it has to be checkable from a diff."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "service-module",
+              "route-only",
+              "ui-only",
+              "schema-change",
+              "cross-cutting"
+            ],
+            "description": "Where the ticket's change mostly lands. `service-module`: a rule, calculation or query behind a module's entry point, with its tests. `route-only`: a loader or action, and nothing it calls changes. `ui-only`: components and what they render, no data change. `schema-change`: the schema plus its migration. `cross-cutting`: more than one of these at once — usually a ticket worth splitting."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "description": "Positions that must be finished first. Empty means it can be built the moment the queue opens — those are the ones that could run in parallel."
+          }
+        }
+      }
+    }
+  }
+}
