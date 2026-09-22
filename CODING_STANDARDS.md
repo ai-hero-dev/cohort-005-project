@@ -37,6 +37,10 @@ Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
 
+## Keep files under 500 lines
+
+Keep every file under 500 lines.
+
 ## Import a module only through its entry points
 
 A module in `app/modules/` exposes its root files and hides everything in
