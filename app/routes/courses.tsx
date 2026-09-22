@@ -13,7 +13,7 @@ import {
   CourseStatus,
   LessonProgressStatus,
 } from "~/db/schema";
-import { eq, like, and, or, sql, inArray } from "drizzle-orm";
+import { eq, and, or, sql, inArray } from "drizzle-orm";
 import {
   Card,
   CardContent,
@@ -46,9 +46,8 @@ function buildCourseQuery(
   }
 
   if (search) {
-    const term = `%${search}%`;
     conditions.push(
-      or(like(coursesTable.title, term), like(coursesTable.description, term))
+      sql.raw(`title LIKE '%${search}%' OR description LIKE '%${search}%'`)
     );
   }
 
