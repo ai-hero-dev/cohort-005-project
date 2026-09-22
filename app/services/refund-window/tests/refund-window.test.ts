@@ -6,11 +6,15 @@ import {
 } from "../index";
 
 // The first test in this repository that could not have been written before.
-// The same arithmetic used to sit inside the analytics loader, where `now`
+// The same arithmetic used to sit inside the analytics loader, where today
 // came from `new Date()` and the rows came from the database, so there was
-// nothing to call. Here `now` is an argument.
+// nothing to call. Here the clock is an argument.
 
-const NOW = new Date("2026-03-15T12:00:00.000Z");
+const TODAY = "2026-03-15";
+
+function clockAt(day: string) {
+  return { today: () => day };
+}
 
 function purchase(overrides: Partial<PurchaseInWindow> = {}): PurchaseInWindow {
   return {
@@ -25,9 +29,13 @@ function purchase(overrides: Partial<PurchaseInWindow> = {}): PurchaseInWindow {
 function summarise(
   purchases: PurchaseInWindow[],
   totalGrossCents = 100_000,
-  now = NOW
+  today = TODAY
 ) {
-  return summariseRefundExposure({ purchases, totalGrossCents, now });
+  return summariseRefundExposure({
+    purchases,
+    totalGrossCents,
+    clock: clockAt(today),
+  });
 }
 
 describe("summariseRefundExposure", () => {
@@ -80,20 +88,11 @@ describe("summariseRefundExposure", () => {
     expect(exposure.courses[0]?.daysLeft).toBe(0);
   });
 
-  it("gives the same answer whatever time of day it is asked", () => {
+  it("closes the window the day after the last day, not a day later", () => {
     const purchases = [purchase({ purchasedAt: "2026-03-01T09:00:00.000Z" })];
-    const earlyMorning = summarise(
-      purchases,
-      100_000,
-      new Date("2026-03-15T00:00:01.000Z")
-    );
-    const lateNight = summarise(
-      purchases,
-      100_000,
-      new Date("2026-03-15T23:59:59.000Z")
-    );
 
-    expect(earlyMorning).toEqual(lateNight);
+    expect(summarise(purchases, 100_000, "2026-03-15").purchaseCount).toBe(1);
+    expect(summarise(purchases, 100_000, "2026-03-16").purchaseCount).toBe(0);
   });
 
   it("counts the purchases that leave the window today", () => {

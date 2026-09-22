@@ -13,17 +13,17 @@ import {
   refunds,
   users,
   videoWatchEvents,
+  lessonProgress,
+  LessonProgressStatus,
   NotificationCategory,
   RefundStatus,
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
 import { getDiscountForCountry } from "~/lib/ppp";
+import { systemClock } from "~/services/clock";
+import { decideRefund, type RefundRefusal } from "~/services/refund-policy";
 import { formatPrice } from "~/lib/utils";
-
-const REFUND_WINDOW_DAYS = 14;
-const MAX_WATCHED_HOURS = 2;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const refundParamsSchema = z.object({
   slug: z.string().min(1),
@@ -61,6 +61,54 @@ function getLessonIdsForCourse(courseId: number): number[] {
   return rows.map((row) => row.id);
 }
 
+function getCompletedLessonCount(userId: number, lessonIds: number[]): number {
+  if (lessonIds.length === 0) return 0;
+
+  const row = db
+    .select({ completed: sql<number>`count(*)` })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, LessonProgressStatus.Completed),
+        inArray(lessonProgress.lessonId, lessonIds)
+      )
+    )
+    .get();
+
+  return row?.completed ?? 0;
+}
+
+function getWatchedSeconds(userId: number, lessonIds: number[]): number {
+  if (lessonIds.length === 0) return 0;
+
+  const furthestPerLesson = db
+    .select({
+      furthest: sql<number>`max(${videoWatchEvents.positionSeconds})`,
+    })
+    .from(videoWatchEvents)
+    .where(
+      and(
+        eq(videoWatchEvents.userId, userId),
+        inArray(videoWatchEvents.lessonId, lessonIds)
+      )
+    )
+    .groupBy(videoWatchEvents.lessonId)
+    .all();
+
+  return furthestPerLesson.reduce((total, row) => total + row.furthest, 0);
+}
+
+// Which condition refused decides the status. The Policy says why; the route
+// says how that reaches the browser.
+const REFUSAL_STATUS: Record<RefundRefusal, number> = {
+  "refund-already-open": 409,
+  "window-closed": 403,
+  "too-much-completed": 403,
+  "too-much-watched": 403,
+  "seat-claimed": 403,
+};
+
 function getOpenRefund(purchaseId: number) {
   return db
     .select()
@@ -72,21 +120,6 @@ function getOpenRefund(purchaseId: number) {
       )
     )
     .get();
-}
-
-// The fourteen-day window is counted in whole days, not hours — someone who
-// buys at 23:00 should still get the whole of their fourteenth day. The day is
-// taken in UTC, the clock `createdAt` is stored in, so a learner in Auckland
-// and a learner in Los Angeles get the same answer for the same purchase.
-function calendarDay(when: Date): string {
-  return when.toISOString().slice(0, 10);
-}
-
-function lastDayOfWindow(purchasedAtIso: string): string {
-  const deadline = new Date(
-    new Date(purchasedAtIso).getTime() + REFUND_WINDOW_DAYS * MS_PER_DAY
-  );
-  return calendarDay(deadline);
 }
 
 /**
@@ -187,14 +220,11 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You have not bought this course.", { status: 403 });
   }
 
-  if (getOpenRefund(purchase.id)) {
-    throw data("You already have a refund open on this purchase.", {
-      status: 409,
-    });
-  }
+  // The Refund Policy is five conditions, and it lives in one module. This
+  // action's job is to gather the facts, hand them over, and turn a refusal
+  // into a response.
+  const courseLessonIds = getLessonIdsForCourse(course.id);
 
-  // A Seat that came out of a team licence, and has been claimed, belongs to
-  // the team — the learner cannot hand it back on their own.
   const claimedSeat = db
     .select({ id: coupons.id })
     .from(coupons)
@@ -203,53 +233,32 @@ export async function action({ params, request }: Route.ActionArgs) {
     )
     .get();
 
-  if (claimedSeat) {
-    throw data("A claimed team seat cannot be refunded.", { status: 403 });
-  }
+  const decision = decideRefund(
+    {
+      purchasedAt: purchase.createdAt,
+      amountPaidCents: purchase.amountPaid,
+      listPriceCents: course.price,
+      country: purchase.country,
+      lessonCount: courseLessonIds.length,
+      completedLessonCount: getCompletedLessonCount(
+        currentUserId,
+        courseLessonIds
+      ),
+      watchedSeconds: getWatchedSeconds(currentUserId, courseLessonIds),
+      hasClaimedSeat: claimedSeat !== undefined,
+      hasOpenRefund: getOpenRefund(purchase.id) !== undefined,
+    },
+    (country) => getDiscountForCountry(country) > 0,
+    systemClock
+  );
 
-  const today = calendarDay(new Date());
-  const withinRefundWindow = today <= lastDayOfWindow(purchase.createdAt);
-
-  if (!withinRefundWindow) {
-    throw data(`The ${REFUND_WINDOW_DAYS}-day refund window has closed.`, {
-      status: 403,
+  if (!decision.eligible) {
+    throw data(decision.message, {
+      status: REFUSAL_STATUS[decision.refusedBy],
     });
   }
 
-  const courseLessonIds = getLessonIdsForCourse(course.id);
-
-  let watchedSeconds = 0;
-  if (courseLessonIds.length > 0) {
-    const furthestPerLesson = db
-      .select({
-        furthest: sql<number>`max(${videoWatchEvents.positionSeconds})`,
-      })
-      .from(videoWatchEvents)
-      .where(
-        and(
-          eq(videoWatchEvents.userId, currentUserId),
-          inArray(videoWatchEvents.lessonId, courseLessonIds)
-        )
-      )
-      .groupBy(videoWatchEvents.lessonId)
-      .all();
-
-    watchedSeconds = furthestPerLesson.reduce(
-      (total, row) => total + row.furthest,
-      0
-    );
-  }
-
-  if (watchedSeconds >= MAX_WATCHED_HOURS * 60 * 60) {
-    throw data("You have watched too much of this course to refund it.", {
-      status: 403,
-    });
-  }
-
-  // A purchase made at a purchasing-power price is given back at that price,
-  // not at the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const refundableAmount = pppDiscount > 0 ? purchase.amountPaid : course.price;
+  const refundableAmount = decision.refundableCents;
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, refundActionSchema);
@@ -258,8 +267,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     return data({ errors: parsed.errors }, { status: 400 });
   }
 
-  db
-    .insert(refunds)
+  db.insert(refunds)
     .values({
       purchaseId: purchase.id,
       status: RefundStatus.Requested,
@@ -294,9 +302,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     amount: refundableAmount,
   });
 
-  console.log(
-    `[email] to=${email.to} subject=${email.subject}\n${email.body}`
-  );
+  console.log(`[email] to=${email.to} subject=${email.subject}\n${email.body}`);
 
   return redirect("/settings");
 }

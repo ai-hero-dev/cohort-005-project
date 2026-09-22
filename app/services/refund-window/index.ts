@@ -1,5 +1,10 @@
 import { splitRevenue } from "~/lib/analytics";
-import { utcDay, utcDayAfter, wholeDaysBetween } from "./lib/utc-days";
+import {
+  addDays,
+  daysBetween,
+  type CalendarDay,
+  type Clock,
+} from "~/services/clock";
 
 // ─── The refund window ───
 //
@@ -7,10 +12,10 @@ import { utcDay, utcDayAfter, wholeDaysBetween } from "./lib/utc-days";
 // money is reported as revenue but is still the Learner's, and an Instructor
 // looking at a revenue figure is looking at a number that can go down.
 //
-// This module owns the day arithmetic behind that sentence. It takes plain
-// rows and the current time and gives back the answer. It never reads the
-// clock and it never reads the database, so a caller — a loader, a test,
-// anything — decides both.
+// This module owns the fourteen days. It takes plain rows and a `Clock` and
+// gives back the answer. It never reads the machine's clock and it never
+// reads the database, so a caller — a loader, a test, anything — decides
+// both. The day arithmetic itself belongs to `~/services/clock`.
 
 /** The length of the refund window, in whole days. See `GLOSSARY.md`. */
 export const REFUND_WINDOW_DAYS = 14;
@@ -46,10 +51,33 @@ export type RefundExposure = {
   courses: ExposedCourse[];
 };
 
-// The window is counted in whole days, not hours: somebody who buys at 23:00
-// gets the whole of their fourteenth day.
-function lastDayOfWindow(purchasedAt: string): string {
-  return utcDayAfter(purchasedAt, REFUND_WINDOW_DAYS);
+/**
+ * The last day a Learner may still ask for their money back.
+ *
+ * The window is counted in whole days, not hours: somebody who buys at 23:00
+ * gets the whole of their fourteenth day.
+ */
+export function lastDayOfRefundWindow(purchasedAt: string): CalendarDay {
+  return addDays(purchasedAt, REFUND_WINDOW_DAYS);
+}
+
+/** Whether the window on a Purchase is still open, as of the clock's today. */
+export function isWithinRefundWindow(
+  purchasedAt: string,
+  clock: Clock
+): boolean {
+  return clock.today() <= lastDayOfRefundWindow(purchasedAt);
+}
+
+/** Days until the window closes. Zero on the last day, and never negative. */
+export function daysLeftInRefundWindow(
+  purchasedAt: string,
+  clock: Clock
+): number {
+  return Math.max(
+    0,
+    daysBetween(clock.today(), lastDayOfRefundWindow(purchasedAt))
+  );
 }
 
 /**
@@ -62,9 +90,9 @@ function lastDayOfWindow(purchasedAt: string): string {
 export function summariseRefundExposure(input: {
   purchases: PurchaseInWindow[];
   totalGrossCents: number;
-  now: Date;
+  clock: Clock;
 }): RefundExposure {
-  const today = utcDay(input.now);
+  const today = input.clock.today();
   const byCourse = new Map<number, ExposedCourse>();
 
   let grossCents = 0;
@@ -72,10 +100,10 @@ export function summariseRefundExposure(input: {
   let closingTodayCount = 0;
 
   for (const purchase of input.purchases) {
-    const lastDay = lastDayOfWindow(purchase.purchasedAt);
+    const lastDay = lastDayOfRefundWindow(purchase.purchasedAt);
     if (today > lastDay) continue;
 
-    const daysLeft = Math.max(0, wholeDaysBetween(today, lastDay));
+    const daysLeft = Math.max(0, daysBetween(today, lastDay));
 
     grossCents += purchase.amountPaidCents;
     purchaseCount += 1;

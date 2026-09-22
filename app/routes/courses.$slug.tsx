@@ -54,6 +54,8 @@ import {
   getCountryTierInfo,
   getDiscountForCountry,
 } from "~/lib/ppp";
+import { systemClock } from "~/services/clock";
+import { decideRefund } from "~/services/refund-policy";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
 import { StarRating, StarRatingInput } from "~/components/star-rating";
@@ -311,7 +313,10 @@ function findRating(userId: number, courseId: number) {
     .select()
     .from(courseRatings)
     .where(
-      and(eq(courseRatings.userId, userId), eq(courseRatings.courseId, courseId))
+      and(
+        eq(courseRatings.userId, userId),
+        eq(courseRatings.courseId, courseId)
+      )
     )
     .get();
 }
@@ -370,10 +375,6 @@ function rateCourse(userId: number, courseId: number, rating: number) {
     .returning()
     .get();
 }
-
-const REFUND_WINDOW_DAYS = 14;
-const REFUND_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
-const REFUND_COMPLETION_LIMIT = 0.5;
 
 function getPurchaseForCourse(userId: number, courseId: number) {
   return db
@@ -435,52 +436,20 @@ function getSecondsWatched(userId: number, lessonIds: number[]) {
   return furthestPerLesson.reduce((total, row) => total + row.furthest, 0);
 }
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// Compare whole days, not hours — a purchase at 23:00 should still get its
-// full fourteenth day. The day is read in UTC, the same clock `createdAt` is
-// written in, so the same purchase gets the same answer wherever it is read
-// from.
-function asUtcDayString(when: Date) {
-  return when.toISOString().slice(0, 10);
-}
-
 /**
  * What the learner is offered if they want their money back, or null if the
  * Refund Policy refuses this purchase.
+ *
+ * The five conditions are not here. They are in `~/services/refund-policy`,
+ * which the refund action asks the same question — so the button this loader
+ * hides and the form that action refuses agree, by construction.
  */
-function getRefundOffer(
-  userId: number,
-  course: { id: number; price: number }
-) {
+function getRefundOffer(userId: number, course: { id: number; price: number }) {
   const purchase = getPurchaseForCourse(userId, course.id);
 
   if (!purchase) return null;
-  if (getRequestedRefund(purchase.id)) return null;
-
-  const purchasedAt = new Date(purchase.createdAt);
-  const purchasedDay = asUtcDayString(purchasedAt);
-  const lastDayInWindow = asUtcDayString(
-    new Date(purchasedAt.getTime() + REFUND_WINDOW_DAYS * MS_PER_DAY)
-  );
-  const todayDay = asUtcDayString(new Date());
-  const isWithinWindow =
-    todayDay >= purchasedDay && todayDay <= lastDayInWindow;
-
-  if (!isWithinWindow) return null;
 
   const lessonIds = getCourseLessonIds(course.id);
-
-  if (lessonIds.length > 0) {
-    const completedCount = getCompletedLessonCount(userId, lessonIds);
-    if (completedCount / lessonIds.length >= REFUND_COMPLETION_LIMIT) {
-      return null;
-    }
-  }
-
-  if (getSecondsWatched(userId, lessonIds) >= REFUND_WATCH_LIMIT_SECONDS) {
-    return null;
-  }
 
   const claimedSeat = db
     .select({ id: coupons.id })
@@ -490,14 +459,28 @@ function getRefundOffer(
     )
     .get();
 
-  if (claimedSeat) return null;
+  const decision = decideRefund(
+    {
+      purchasedAt: purchase.createdAt,
+      amountPaidCents: purchase.amountPaid,
+      listPriceCents: course.price,
+      country: purchase.country,
+      lessonCount: lessonIds.length,
+      completedLessonCount: getCompletedLessonCount(userId, lessonIds),
+      watchedSeconds: getSecondsWatched(userId, lessonIds),
+      hasClaimedSeat: claimedSeat !== undefined,
+      hasOpenRefund: getRequestedRefund(purchase.id) !== undefined,
+    },
+    (country) => getDiscountForCountry(country) > 0,
+    systemClock
+  );
 
-  // A purchasing-power price is given back at the price that was paid, not at
-  // the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const amount = pppDiscount > 0 ? purchase.amountPaid : course.price;
+  if (!decision.eligible) return null;
 
-  return { amount, lastDayInWindow };
+  return {
+    amount: decision.refundableCents,
+    lastDayInWindow: decision.lastDayInWindow,
+  };
 }
 
 const ratingSchema = z.object({
