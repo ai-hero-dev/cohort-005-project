@@ -55,7 +55,7 @@ function buildCourseQuery(
   if (search) {
     const term = `%${search}%`;
     conditions.push(
-      or(like(courses.title, term), like(courses.description, term))!
+      or(like(courses.title, term), like(courses.description, term))
     );
   }
 
@@ -111,13 +111,13 @@ function getLessonCountForCourse(courseId: number) {
   const count = db
     .select({ count: sql<number>`count(*)` })
     .from(lessons)
-    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id))))
     .get();
 
   return count?.count ?? 0;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta() {
   return [
     { title: "Cadence — Learn at your own pace" },
     {

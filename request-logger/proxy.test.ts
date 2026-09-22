@@ -205,14 +205,15 @@ describe("rejectUpgrade", () => {
    * time even though Node's default already closes unhandled upgrades.
    */
   it("answers a WebSocket upgrade attempt with 426 immediately, instead of leaving the client waiting", async () => {
-    server = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end("should not be reached by an upgrade attempt");
+    const upgradeServer = http.createServer((_req, response) => {
+      response.writeHead(200);
+      response.end("should not be reached by an upgrade attempt");
     });
-    server.on("upgrade", rejectUpgrade);
+    server = upgradeServer;
+    upgradeServer.on("upgrade", rejectUpgrade);
 
-    await new Promise<void>((resolve) => server!.listen(0, resolve));
-    const { port } = server.address() as net.AddressInfo;
+    await new Promise<void>((resolve) => upgradeServer.listen(0, resolve));
+    const { port } = upgradeServer.address() as net.AddressInfo;
 
     const response = await new Promise<string>((resolve, reject) => {
       const socket = net.connect(port, "127.0.0.1", () => {
@@ -270,7 +271,7 @@ describe("trackBurst", () => {
       lastResult = trackBurst(state, KEY, now); // all in the same instant
       state = lastResult.state;
     }
-    expect(lastResult!.suppressed).toBe(false); // exactly at the threshold: not yet over it
+    expect(lastResult?.suppressed).toBe(false); // exactly at the threshold: not yet over it
 
     const over = trackBurst(state, KEY, now);
     expect(over.suppressed).toBe(true);
