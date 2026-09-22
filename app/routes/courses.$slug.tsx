@@ -367,9 +367,9 @@ function rateCourse(userId: number, courseId: number, rating: number) {
     .get();
 }
 
-const CANCEL_WINDOW_DAYS = 14;
-const CANCEL_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
-const CANCEL_COMPLETION_LIMIT = 0.5;
+const REFUND_WINDOW_DAYS = 14;
+const REFUND_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
+const REFUND_COMPLETION_LIMIT = 0.5;
 
 function getPurchaseForCourse(userId: number, courseId: number) {
   return db
@@ -431,20 +431,21 @@ function getSecondsWatched(userId: number, lessonIds: number[]) {
   return furthestPerLesson.reduce((total, row) => total + row.furthest, 0);
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 // Compare whole days, not hours — a purchase at 23:00 should still get its
-// full fourteenth day.
-function asDayString(when: Date) {
-  const year = when.getFullYear();
-  const month = String(when.getMonth() + 1).padStart(2, "0");
-  const day = String(when.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+// full fourteenth day. The day is read in UTC, the same clock `createdAt` is
+// written in, so the same purchase gets the same answer wherever it is read
+// from.
+function asUtcDayString(when: Date) {
+  return when.toISOString().slice(0, 10);
 }
 
 /**
- * What the learner is offered if they want their money back, or null if this
- * purchase cannot be cancelled.
+ * What the learner is offered if they want their money back, or null if the
+ * Refund Policy refuses this purchase.
  */
-function getCancellationOffer(
+function getRefundOffer(
   userId: number,
   course: { id: number; price: number }
 ) {
@@ -453,11 +454,12 @@ function getCancellationOffer(
   if (!purchase) return null;
   if (getRequestedRefund(purchase.id)) return null;
 
-  const purchasedDay = asDayString(new Date(purchase.createdAt));
-  const windowEnd = new Date(purchase.createdAt);
-  windowEnd.setDate(windowEnd.getDate() + CANCEL_WINDOW_DAYS);
-  const lastDayInWindow = asDayString(windowEnd);
-  const todayDay = asDayString(new Date());
+  const purchasedAt = new Date(purchase.createdAt);
+  const purchasedDay = asUtcDayString(purchasedAt);
+  const lastDayInWindow = asUtcDayString(
+    new Date(purchasedAt.getTime() + REFUND_WINDOW_DAYS * MS_PER_DAY)
+  );
+  const todayDay = asUtcDayString(new Date());
   const isWithinWindow =
     todayDay >= purchasedDay && todayDay <= lastDayInWindow;
 
@@ -467,12 +469,12 @@ function getCancellationOffer(
 
   if (lessonIds.length > 0) {
     const completedCount = getCompletedLessonCount(userId, lessonIds);
-    if (completedCount / lessonIds.length >= CANCEL_COMPLETION_LIMIT) {
+    if (completedCount / lessonIds.length >= REFUND_COMPLETION_LIMIT) {
       return null;
     }
   }
 
-  if (getSecondsWatched(userId, lessonIds) >= CANCEL_WATCH_LIMIT_SECONDS) {
+  if (getSecondsWatched(userId, lessonIds) >= REFUND_WATCH_LIMIT_SECONDS) {
     return null;
   }
 
@@ -526,13 +528,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
-  let cancellation: { amount: number; lastDayInWindow: string } | null = null;
+  let refundOffer: { amount: number; lastDayInWindow: string } | null = null;
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
 
     if (enrolled) {
-      cancellation = getCancellationOffer(currentUserId, {
+      refundOffer = getRefundOffer(currentUserId, {
         id: course.id,
         price: courseWithDetails.price,
       });
@@ -579,7 +581,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundOffer,
   };
 }
 
@@ -680,7 +682,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundOffer,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -916,10 +918,10 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                     </Button>
                   </Link>
                   <RateCourse userRating={userRating} />
-                  {cancellation && (
-                    <CancelPurchase
+                  {refundOffer && (
+                    <RequestRefund
                       slug={course.slug}
-                      amount={cancellation.amount}
+                      amount={refundOffer.amount}
                     />
                   )}
                 </>
@@ -993,7 +995,7 @@ function RateCourse({ userRating }: { userRating: number | null }) {
   );
 }
 
-function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
+function RequestRefund({ slug, amount }: { slug: string; amount: number }) {
   const fetcher = useFetcher<{ errors?: Record<string, string> }>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const isSubmitting = fetcher.state !== "idle";
@@ -1014,7 +1016,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
           className="w-full text-muted-foreground"
           onClick={() => setIsFormOpen(true)}
         >
-          Cancel my purchase
+          Request a refund
         </Button>
       </div>
     );
@@ -1022,9 +1024,9 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
 
   return (
     <div className="border-t pt-4">
-      <p className="mb-2 text-sm font-medium">Cancel my purchase</p>
+      <p className="mb-2 text-sm font-medium">Request a refund</p>
       <p className="mb-3 text-xs text-muted-foreground">
-        We will send {formatPrice(amount)} back to the card you paid with, once
+        We will refund {formatPrice(amount)} to the card you paid with, once
         someone has read your note.
       </p>
       <fetcher.Form
@@ -1040,7 +1042,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
         />
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={isSubmitting}>
-            {isSubmitting ? "Sending..." : "Cancel my purchase"}
+            {isSubmitting ? "Sending..." : "Request a refund"}
           </Button>
           <Button
             type="button"
@@ -1048,7 +1050,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
             size="sm"
             onClick={() => setIsFormOpen(false)}
           >
-            Keep it
+            Keep my course
           </Button>
         </div>
       </fetcher.Form>
