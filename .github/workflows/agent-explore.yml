@@ -26,9 +26,34 @@ name: Agent — Explore A Ticket
 #   run in front tells you which one you have, and it tells you in prose a
 #   human can read in thirty seconds instead of a diff they have to review.
 #
+# AND THEN IT BRANCHES ON ITS OWN ANSWER
+#   The explore agent does not only write prose. It also emits a structured
+#   verdict — a `tag` and a `shape`, shaped by .github/schemas/explore-verdict.json
+#   — and the workflow branches on it:
+#
+#     tag == easy-call   →  the `chain` job labels the issue `agent:implement`,
+#                           which is the trigger for agent-implement.yml. The
+#                           factory keeps going without being asked.
+#     anything else      →  the `halt` job says so on the ticket and stops.
+#                           Somebody has to come and look. That includes the
+#                           explore step failing outright: no verdict is not
+#                           `easy-call`, so `halt` runs on `always()` and the
+#                           ticket never goes quiet.
+#
+#   Those are two jobs with two `if:` conditions on the same job output. Not a
+#   sentence in a prompt asking the agent to be careful — a real edge in the
+#   graph, which either runs or does not.
+#
 # WHAT IT NEEDS
 #   secrets.ANTHROPIC_API_KEY — the agent's auth token.
 #   secrets.GITHUB_TOKEN — supplied by Actions.
+#   secrets.FACTORY_PAT — a fine-grained personal access token with Issues:
+#     write on this repository. The `chain` job needs it, and only it does.
+#     A label applied with the built-in GITHUB_TOKEN does NOT start another
+#     workflow — GitHub suppresses that on purpose, so a workflow cannot
+#     trigger itself into a loop. The chain from explore to implement is
+#     exactly the loop we do want, so it has to be applied by a token that is
+#     not the built-in one.
 
 on:
   issues:
@@ -49,6 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # These two are what the jobs below branch on.
+    outputs:
+      tag: ${{ steps.verdict.outputs.tag }}
+      shape: ${{ steps.verdict.outputs.shape }}
+      one_liner: ${{ steps.verdict.outputs.one_liner }}
+
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -65,7 +96,26 @@ jobs:
             --jq '"# " + .title + "\n\n" + .body' > /tmp/ticket.md
           cat /tmp/ticket.md
 
+      - name: Read the verdict schema
+        id: schema
+        run: |
+          set -euo pipefail
+          # `--json-schema` takes the schema itself, not a path to one: the CLI
+          # parses its argument as JSON and stops at the first `.` of a
+          # filename. So hand over the contents, on one line.
+          #
+          # It goes into `claude_args` inside single quotes, so a single quote
+          # in the file would end the quoting and split the argument. Nothing
+          # downstream would say so — the run would just lose its schema — so
+          # say so here instead.
+          if grep -q "'" .github/schemas/explore-verdict.json; then
+            echo "The verdict schema contains a single quote. Reword it." >&2
+            exit 1
+          fi
+          echo "json=$(jq -c . .github/schemas/explore-verdict.json)" >> "$GITHUB_OUTPUT"
+
       - name: Explore
+        id: explore
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -73,8 +123,14 @@ jobs:
           # Read tools and one Write, for the findings file. No Edit, no
           # `git commit`, no `gh pr`. The allowlist says the same thing the
           # permissions block says, one layer further in.
+          #
+          # `--json-schema` is the new part: the run also returns JSON matching
+          # that schema, on the step's `structured_output`. That is the verdict.
+          # The schema is passed by value — the step above read the file, because
+          # the flag does not take a path.
           claude_args: >-
             --max-turns 30
+            --json-schema '${{ steps.schema.outputs.json }}'
             --allowedTools "Read,Glob,Grep,Write(/tmp/*),Bash(git log*),Bash(git diff*),Bash(npm run lint:boundaries)"
           prompt: |
             You are the explorer in this repository's software factory. You are
@@ -105,8 +161,101 @@ jobs:
             blocks longer than a few lines, no restating of files back at the
             reader.
 
+            Then make the call, as the structured output this run is schema'd
+            for. `tag` is the call itself:
+
+            - `easy-call` — you are confident, nothing here needs a decision
+              anybody would disagree with, and it is safe for the factory to
+              build this unattended. Question 4 above came back empty and you
+              believe it.
+            - `needs-a-human` — you could build it, but somebody has to choose
+              something first. A migration, a name, a policy, a trade.
+            - `blocked` — you could not answer enough of the four to say.
+
+            `shape` names the kind of change. `one_liner` is the sentence a
+            human reads when this halts — say why this tag and not the next
+            one down.
+
+            Tag `easy-call` only when you would be comfortable with the
+            resulting pull request landing without you. If you are weighing it
+            up, that weighing is the answer: it is not an easy call.
+
+      - name: Check the tag is one we recognise
+        id: check
+        env:
+          RAW: ${{ steps.explore.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$RAW" > /tmp/verdict.json
+          tag="$(jq -r '.tag // ""' /tmp/verdict.json)"
+          echo "The agent tagged this: '${tag}'"
+
+          case "$tag" in
+            easy-call | needs-a-human | blocked) recognised=true ;;
+            *) recognised=false ;;
+          esac
+          echo "recognised=$recognised" >> "$GITHUB_OUTPUT"
+
+      - name: Fix a tag we do not recognise
+        id: repair
+        if: steps.check.outputs.recognised == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # `--resume` is the whole point of this step. It picks the previous
+          # step's session back up, with its reading and its reasoning still in
+          # context, and asks for one thing. It does not explore again.
+          #
+          # Restarting would be the obvious fix and the wrong one: the
+          # exploration was fine — the agent read the repo, wrote the findings,
+          # and then fumbled one enum value on the way out. Throwing the run
+          # away to get that value costs the whole exploration a second time,
+          # and gives you no reason to believe the second attempt lands the
+          # enum either. Resume, ask for the one field, move on.
+          claude_args: >-
+            --resume ${{ steps.explore.outputs.session_id }}
+            --max-turns 4
+            --json-schema '${{ steps.schema.outputs.json }}'
+            --allowedTools "Read"
+          prompt: |
+            Your findings are good and this workflow has kept them. One thing
+            came back wrong: `tag` was not one of the three values the schema
+            allows.
+
+            Do not explore again and do not change /tmp/findings.md. Re-emit
+            the same verdict, with `tag` set to exactly one of `easy-call`,
+            `needs-a-human` or `blocked`, whichever you actually meant.
+
+            If you are unsure which you meant, that is `needs-a-human`.
+
+      - name: Settle the verdict
+        id: verdict
+        env:
+          # The repaired output when there was one, the first one otherwise.
+          RAW: ${{ steps.repair.outputs.structured_output || steps.explore.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$RAW" > /tmp/verdict.json
+          cat /tmp/verdict.json
+
+          {
+            echo "tag=$(jq -r '.tag // "blocked"' /tmp/verdict.json)"
+            echo "shape=$(jq -r '.shape // "unclear"' /tmp/verdict.json)"
+            # Squashed onto one line: $GITHUB_OUTPUT is line-based, and a
+            # newline in a value silently truncates it.
+            echo "one_liner=$(jq -r '.one_liner // "The explore run returned no verdict."' /tmp/verdict.json | tr '\n' ' ')"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Comment the findings on the ticket
         if: always()
+        env:
+          # Through env, never interpolated straight into the script. A
+          # `${{ }}` inside `run:` is pasted in as text before bash sees it,
+          # so anything the agent wrote would be running as shell.
+          TAG: ${{ steps.verdict.outputs.tag }}
+          SHAPE: ${{ steps.verdict.outputs.shape }}
+          ONE_LINER: ${{ steps.verdict.outputs.one_liner }}
         run: |
           set -euo pipefail
           [ -s /tmp/findings.md ] || \
@@ -116,9 +265,105 @@ jobs:
             echo ""
             echo "---"
             echo ""
+            echo "**Verdict:** \`${TAG}\` / \`${SHAPE}\` — ${ONE_LINER}"
+            echo ""
             echo "Explored by the explore workflow — [logs](${RUN_URL})."
             echo "Nothing was built and no branch exists. This run could not have"
             echo "written code if it had wanted to: see \`permissions:\` in"
             echo "\`.github/workflows/agent-explore.yml\`."
           } >> /tmp/findings.md
           gh issue comment "$ISSUE_NUMBER" --body-file /tmp/findings.md
+
+  # ── The branch ──────────────────────────────────────────────────────────
+  #
+  # Two jobs, one condition and its negation, both reading the same job
+  # output. Exactly one of them runs, and which one is decided by a sentence
+  # the agent wrote about its own confidence — or, when the explore step broke
+  # before it could write that sentence, by `halt` being the default.
+
+  chain:
+    needs: explore
+    if: needs.explore.outputs.tag == 'easy-call'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hand the ticket to the implementer
+        env:
+          # FACTORY_PAT, not GITHUB_TOKEN. A label applied by the built-in
+          # token does not fire `issues: labeled`, so agent-implement.yml
+          # would never wake up and the chain would end here, silently, with
+          # a green tick. This is the line that makes it a factory instead of
+          # three workflows in a folder.
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          SHAPE: ${{ needs.explore.outputs.shape }}
+          ONE_LINER: ${{ needs.explore.outputs.one_liner }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/chain-comment.md <<EOF
+          Explore called this an **easy call** (\`${SHAPE}\`): ${ONE_LINER}
+
+          Labelling \`agent:implement\` and handing it to the implementer.
+          Nobody is being asked first — that is what \`easy-call\` means.
+          EOF
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/chain-comment.md
+
+          # The handover itself. agent-implement.yml is watching for exactly
+          # this label going on.
+          gh issue edit "$ISSUE_NUMBER" \
+            --remove-label "agent:explore" \
+            --add-label "agent:implement"
+
+  halt:
+    needs: explore
+    # The honest default. `always()` — minus the two cases where there was no
+    # run to halt — because a failed explore step produces no verdict at all,
+    # and "no verdict" is not `easy-call`: it is the loudest reason there is to
+    # stop and fetch a person. Without this the step failing meant neither
+    # branch ran, and the ticket sat there with nothing said on it.
+    if: >-
+      !cancelled()
+      && needs.explore.result != 'skipped'
+      && needs.explore.outputs.tag != 'easy-call'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Stop and wait for a person
+        env:
+          # No PAT here, deliberately. This job's whole job is to not start
+          # anything, so give it a token that could not.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          TAG: ${{ needs.explore.outputs.tag }}
+          SHAPE: ${{ needs.explore.outputs.shape }}
+          ONE_LINER: ${{ needs.explore.outputs.one_liner }}
+          EXPLORE_RESULT: ${{ needs.explore.result }}
+        run: |
+          set -euo pipefail
+          if [ "$EXPLORE_RESULT" != "success" ]; then
+            cat > /tmp/halt-comment.md <<EOF
+          The explore run did not finish (**${EXPLORE_RESULT}**), so there is no
+          verdict — [logs](${RUN_URL}).
+
+          Nothing has been built and nothing will be. A run that cannot say
+          whether this is an easy call is not an easy call.
+          EOF
+          else
+            cat > /tmp/halt-comment.md <<EOF
+          Explore stopped at **\`${TAG}\`** (\`${SHAPE}\`): ${ONE_LINER}
+
+          Nothing has been built and nothing will be. Read the findings above,
+          settle whatever is open, then label this \`agent:implement\`
+          yourself when you are happy.
+          EOF
+          fi
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/halt-comment.md
+
+          # The label has to exist before it can go on, and a fresh clone of
+          # this repository does not have it. Creating it is idempotent, and
+          # this job must not go red on the path it takes most often.
+          gh label create "needs-a-human" --color D93F0B \
+            --description "The factory stopped here" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "needs-a-human"
