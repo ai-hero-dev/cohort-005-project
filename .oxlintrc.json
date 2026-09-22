@@ -1,6 +1,9 @@
 {
+  "jsPlugins": ["./scripts/lint-rules/route-config-matches-filename.js"],
   "categories": {
     "correctness": "warn"
   },
-  "rules": {}
+  "rules": {
+    "route-config/matches-filename": "warn"
+  }
 }
