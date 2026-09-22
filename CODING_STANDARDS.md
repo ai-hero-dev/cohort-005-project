@@ -4,11 +4,11 @@
 under it.** This file is the root, so the six rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
 
-| File                             | Applies to                                |
-| -------------------------------- | ----------------------------------------- |
-| `app/db/CODING_STANDARDS.md`     | The schema, migrations and every query     |
-| `app/routes/CODING_STANDARDS.md` | Loaders, actions and anything they reach   |
-| `app/components/CODING_STANDARDS.md` | React components and what they render  |
+| File                                 | Applies to                               |
+| ------------------------------------ | ---------------------------------------- |
+| `app/db/CODING_STANDARDS.md`         | The schema, migrations and every query   |
+| `app/routes/CODING_STANDARDS.md`     | Loaders, actions and anything they reach |
+| `app/components/CODING_STANDARDS.md` | React components and what they render    |
 
 Read the root file and the one for the directory you are editing. Nothing
 else.
@@ -96,8 +96,10 @@ no step was the step that made it too long.
 When a file goes past the ceiling, split it. Move the part that has its own
 name into its own module.
 
-Nothing enforces this rule. It is a sentence in a file, and a sentence in a
-file only works on the days somebody reads it.
+`.husky/pre-commit` enforces this rule. `scripts/check-file-size.sh` counts
+the bytes of every staged file, divides by four for a token count, and blocks
+the commit over 5,500 tokens — about five hundred lines. The sentence above
+is no longer something you have to remember.
 
 ## Import a module through its entry points, never into its subfolders
 

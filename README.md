@@ -9,7 +9,6 @@
 </div>
 <br/>
 
-
 > The exercise repo for the [AI Coding Crash Course](https://www.aihero.dev/workshops/ai-coding-crash-course) — a self-paced course from Matt Pocock on AI-assisted engineering with Claude Code.
 
 This is a full-stack course platform (think a mini Udemy) built with React Router, TypeScript, SQLite, and Drizzle ORM. Throughout the course, you'll use Claude Code to explore, extend, and refactor this codebase — learning real engineering workflows for AI-assisted development along the way.
@@ -38,17 +37,18 @@ The app will be running at `http://localhost:5173`.
 
 ## Scripts
 
-| Command                     | Description                            |
-| --------------------------- | -------------------------------------- |
-| `npm run dev`                  | Start the development server           |
-| `npm run build`                | Build for production                   |
-| `npm run test`                 | Run tests with Vitest                  |
-| `npm run test:watch`           | Run tests in watch mode                |
-| `npm run typecheck`            | Type-check the project                 |
-| `npm run db:migrate`           | Run database migrations                |
-| `npm run db:seed`              | Seed the database                      |
-| `npm run reset <slug>`         | Reset your repo to a lesson checkpoint |
-| `npm run cherry-pick <slug>`   | Cherry-pick a lesson's solution        |
+| Command                      | Description                              |
+| ---------------------------- | ---------------------------------------- |
+| `npm run dev`                | Start the development server             |
+| `npm run build`              | Build for production                     |
+| `npm run test`               | Run tests with Vitest                    |
+| `npm run test:watch`         | Run tests in watch mode                  |
+| `npm run check:file-size`    | Block staged files over the token budget |
+| `npm run typecheck`          | Type-check the project                   |
+| `npm run db:migrate`         | Run database migrations                  |
+| `npm run db:seed`            | Seed the database                        |
+| `npm run reset <slug>`       | Reset your repo to a lesson checkpoint   |
+| `npm run cherry-pick <slug>` | Cherry-pick a lesson's solution          |
 
 ## Course Structure
 
