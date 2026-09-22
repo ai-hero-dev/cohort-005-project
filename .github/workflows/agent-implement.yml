@@ -1,0 +1,181 @@
+name: Agent — Implement A Ticket
+
+# The first workflow in the software factory.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:implement` label on an issue. That is the whole
+#   interface. No comment, no trigger phrase, no @mention — one label.
+#
+# WHAT IT DOES
+#   Checks the repo out, gives an agent the ticket and the repo's own
+#   verification checks, and opens a DRAFT pull request with whatever the
+#   agent wrote. Draft, always: the human checkpoint we removed from the
+#   *build* has not been removed from the *merge*.
+#
+# WHAT IT NEEDS
+#   secrets.ANTHROPIC_API_KEY — the agent's auth token. Swap it for
+#     `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` if you
+#     authenticate with a Claude subscription instead of the API.
+#   secrets.GITHUB_TOKEN — supplied by Actions. The `permissions:` block below
+#     is what decides how much of it this job gets.
+#
+# A CAUTION THAT COMES WITH IT
+#   `issues: labeled` fires on issues, which cannot come from a fork. Do not
+#   copy this trigger onto `pull_request_target` — that runs fork code with
+#   this job's secrets, and a fork can label nothing but can change the code
+#   the agent runs.
+
+on:
+  issues:
+    types: [labeled]
+
+# The permissions block from the last lesson, finally attached to something.
+# It is per-workflow, and it is a ceiling: every step below runs with exactly
+# this much of the GITHUB_TOKEN and no more.
+permissions:
+  contents: write # push the agent's branch
+  issues: write # comment progress back on the ticket
+  pull-requests: write # open the draft PR
+
+# One run per ticket. A second label event on the same issue waits for the
+# first to finish rather than racing it onto the same branch.
+concurrency:
+  group: agent-implement-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    # Every other label on every other issue stops here, for free.
+    if: github.event.label.name == 'agent:implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      BRANCH: agent/issue-${{ github.event.issue.number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migrate and seed the database
+        # The agent gets a real database, because half of this repo's checks
+        # need one. It is disposable — see docs/adr/0005-disposable-database.md.
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Open the branch
+        run: |
+          set -euo pipefail
+          git config user.name "agent-factory[bot]"
+          git config user.email "agent-factory[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+      - name: Read the ticket
+        run: |
+          set -euo pipefail
+          gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,comments \
+            > /tmp/ticket.json
+          jq -r '"# " + .title + "\n\n" + .body' /tmp/ticket.json > /tmp/ticket.md
+          cat /tmp/ticket.md
+
+      - name: Build the ticket
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The agent edits files. It does not commit, push or open the PR —
+          # the steps below do, where you can read them.
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run *),Bash(npx *),Bash(git diff*),Bash(git status*)"
+          prompt: |
+            You are the implementer in this repository's software factory.
+
+            Read AGENTS.md first. It tells you the verification checks and the
+            order to run them in. Read CODING_STANDARDS.md and the
+            CODING_STANDARDS.md of every directory you edit.
+
+            Your ticket is in /tmp/ticket.md. Implement it, and nothing else.
+
+            Rules of this run:
+            - Follow the architecture already in place. Behaviour goes in a
+              deep module under app/services/, behind an interface a test can
+              call, imported only through its entry points. It does not go
+              inline in a loader.
+            - Write tests with the code. `npm test` must be greener at the end
+              than it was at the start, and never redder.
+            - Before you finish, run `npm run typecheck`, `npm test` and
+              `npm run build`. Do not stop while any of them is failing.
+            - Do not commit, do not push, do not open a pull request. Leave
+              your work in the working tree.
+            - Do not edit anything under .github/.
+
+            Write a short summary of what you changed and why to
+            /tmp/pr-body.md, in the voice of the `pr` skill: what the ticket
+            asked for, what you built, what you deliberately left out.
+
+      - name: Verify
+        # The agent was asked to run these. This runs them again, because a
+        # step that claims it is green and a step that is green are different
+        # things.
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Commit and push
+        id: push
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "The agent changed nothing. Nothing to open a PR for."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Implement #${ISSUE_NUMBER}" -m "Closes #${ISSUE_NUMBER}"
+          git push --set-upstream origin "$BRANCH"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open the draft pull request
+        if: steps.push.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          title="$(gh issue view "$ISSUE_NUMBER" --json title --jq .title)"
+          body_file=/tmp/pr-body.md
+          [ -s "$body_file" ] || echo "Built by the implementer workflow." > "$body_file"
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Closes #${ISSUE_NUMBER}. Built unattended by [this run](${RUN_URL})."
+            echo "Nobody has read this yet. That is what the draft state is for."
+          } >> "$body_file"
+
+          gh pr create \
+            --draft \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH" \
+            --title "$title" \
+            --body-file "$body_file"
+
+      - name: Report back on the ticket
+        if: always()
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body \
+            "Implementer run **${{ job.status }}** — [logs](${RUN_URL})."
