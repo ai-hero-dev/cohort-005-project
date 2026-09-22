@@ -1,5 +1,13 @@
 # Coding standards
 
+**A workflow reads this file now, not a person.** `.github/workflows/agent-review.yml`
+fetches it on every review, quotes the heading of the rule it is applying, and
+posts the verdict on the pull request. Two things follow. A rule nobody can
+apply from the diff alone is a rule the reviewer will skip, so write each one so
+it can be checked against a patch. And a rule you add here is a rule that is
+applied to every change from the next run onwards, with nobody in the room to
+soften it — which is the reason to keep the list this short.
+
 **A `CODING_STANDARDS.md` applies to the directory it sits in, and everything
 under it.** This file is the root, so the seven rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
@@ -128,13 +136,15 @@ Refund Policy is one idea with one name, so it is one module called
 `refund-policy` — not `refundUtils`, and not three files named after the
 conditions it checks.
 
-**This repository does not follow this rule yet, and you should know that
-before you read it.** There is no service layer. Every query, every rule and
-every aggregation lives inline in the loader or action that needed it, and the
-ones two routes both needed live inline twice. That is the state the code is
-in. The rule above is what we are moving towards, one module at a time, and a
-change that leaves one more thing behind a callable interface than it found is
-a change in the right direction.
+**The repository follows this rule now, and it did not always.** There was a
+point where there was no service layer at all: every query, every rule and
+every aggregation lived inline in the loader that needed it, and the ones two
+routes both needed lived inline twice. `app/services/` is what that was traded
+for, one module at a time — see [docs/rfcs/0001-earn-back-the-service-layer.md](./docs/rfcs/0001-earn-back-the-service-layer.md).
+
+So the rule is no longer a direction of travel. A change that puts a new rule
+back inline in a loader is a change that goes backwards, and the reviewer says
+so.
 
 ## Import a service through its entry points, never into its subfolders
 
