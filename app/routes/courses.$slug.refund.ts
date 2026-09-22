@@ -8,10 +8,12 @@ import {
   coupons,
   lessons,
   modules,
+  notifications,
   purchases,
   refunds,
   users,
   videoWatchEvents,
+  NotificationCategory,
   RefundStatus,
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -102,6 +104,48 @@ function buildRefundEmail(input: {
       "— The Cadence team",
     ].join("\n"),
   };
+}
+
+// ─── In-app to external bridge ───
+// The notification row is the thing the bell reads. Ably is the bridge that
+// carries the same event out of the app, for staff who are not looking at it.
+// Without ABLY_API_KEY there is no bridge — the in-app half still works, and
+// nothing here fails.
+async function publishNotificationToAbly(input: {
+  userId: number;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+}) {
+  const apiKey = process.env.ABLY_API_KEY;
+  if (!apiKey) return;
+
+  try {
+    const response = await fetch(
+      `https://rest.ably.io/channels/notifications:${input.userId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(apiKey).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: input.category,
+          data: { title: input.title, body: input.body },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `[ably] publish failed with ${response.status} ${response.statusText}`
+      );
+    }
+  } catch (error) {
+    // A vendor being unreachable must not fail a refund request. The row is
+    // already written, and the bell reads the row.
+    console.error("[ably] could not publish notification", error);
+  }
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -216,6 +260,25 @@ export async function action({ params, request }: Route.ActionArgs) {
     })
     .returning()
     .get();
+
+  // Only an Admin resolves a Refund, but the course's own instructor hears
+  // about every request, so it lands in their bell as well.
+  db.insert(notifications)
+    .values({
+      userId: course.instructorId,
+      category: NotificationCategory.Refund,
+      title: "A learner asked for a refund",
+      body: `${learner.name} asked for a refund on "${course.title}".`,
+      linkUrl: "/admin/refunds",
+    })
+    .run();
+
+  await publishNotificationToAbly({
+    userId: course.instructorId,
+    category: NotificationCategory.Refund,
+    title: "A learner asked for a refund",
+    body: `${learner.name} asked for a refund on "${course.title}".`,
+  });
 
   const email = buildRefundEmail({
     learnerName: learner.name,

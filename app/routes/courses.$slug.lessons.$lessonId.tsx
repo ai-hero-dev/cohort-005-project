@@ -18,6 +18,7 @@ import {
   lessonProgress,
   lessons,
   modules,
+  notifications,
   quizzes,
   quizQuestions,
   quizOptions,
@@ -26,6 +27,7 @@ import {
   users,
   videoWatchEvents,
   LessonProgressStatus,
+  NotificationCategory,
   UserRole,
 } from "~/db/schema";
 import { isLiveProgress } from "~/lib/enrollments.server";
@@ -656,6 +658,48 @@ function computeResult(userId: any, quizId: any, selectedAnswers: any): any {
  * Comments are untrusted input, so this must be renderComment — never
  * renderMarkdown, which lets raw HTML through for trusted lesson content.
  */
+// ─── In-app to external bridge ───
+// The notification row is the thing the bell reads. Ably is the bridge that
+// carries the same event out of the app, for somebody who is not looking at
+// it. Without ABLY_API_KEY there is no bridge — the in-app half still works,
+// and nothing here fails.
+async function publishNotificationToAbly(input: {
+  userId: number;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+}) {
+  const apiKey = process.env.ABLY_API_KEY;
+  if (!apiKey) return;
+
+  try {
+    const response = await fetch(
+      `https://rest.ably.io/channels/notifications:${input.userId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(apiKey).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: input.category,
+          data: { title: input.title, body: input.body },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `[ably] publish failed with ${response.status} ${response.statusText}`
+      );
+    }
+  } catch (error) {
+    // A vendor being unreachable must not lose the reply. The row is already
+    // written, and the bell reads the row.
+    console.error("[ably] could not publish notification", error);
+  }
+}
+
 async function renderThread(
   nodes: ThreadComment[]
 ): Promise<RenderedComment[]> {
@@ -925,6 +969,37 @@ export async function action({ params, request }: Route.ActionArgs) {
           parsed.data.parentId ?? null,
           parsed.data.body
         );
+
+        // A reply tells the person who asked. Answering yourself is not an
+        // event worth a notification.
+        const parentId = parsed.data.parentId ?? null;
+        if (parentId !== null) {
+          const parent = getCommentById(parentId);
+          if (parent && parent.userId !== currentUserId) {
+            const replier = getUserById(currentUserId);
+            const repliedOn = getLessonById(lessonId);
+            const title = "You have a reply";
+            const body = `${replier?.name ?? "Somebody"} replied to your comment on "${repliedOn?.title ?? "a lesson"}".`;
+
+            db.insert(notifications)
+              .values({
+                userId: parent.userId,
+                category: NotificationCategory.Discussion,
+                title,
+                body,
+                linkUrl: `/courses/${slug}/lessons/${lessonId}`,
+              })
+              .run();
+
+            await publishNotificationToAbly({
+              userId: parent.userId,
+              category: NotificationCategory.Discussion,
+              title,
+              body,
+            });
+          }
+        }
+
         return { ok: true };
       }
 
