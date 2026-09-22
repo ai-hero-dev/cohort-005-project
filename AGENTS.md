@@ -4,6 +4,7 @@ Do these checks in this order before you report a change to `app/` as complete:
 
 1. `npm run typecheck`
 2. `npm run test`
+3. `npm run lint:boundaries`
 
 ## When something breaks
 
@@ -17,3 +18,9 @@ Do these checks in this order before you report a change to `app/` as complete:
 ### Issue tracker
 
 Issues and PRDs live as GitHub issues on `ai-hero-dev/cohort-005-project`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Codebase design
+
+Every directory in `app/modules/` is a deep module: read
+[app/modules/README.md](./app/modules/README.md) before you add one or import
+one. `npm run lint:boundaries` enforces the boundary.
