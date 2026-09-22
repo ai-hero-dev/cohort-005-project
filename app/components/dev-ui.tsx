@@ -4,6 +4,7 @@ import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import type { UserRole } from "~/db/schema";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
+import { countSeededUsers } from "~/components/dev-ui-seed-count";
 
 interface DevUser {
   id: number;
@@ -40,7 +41,13 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-export function DevUI({ users, currentUser, devCountry, countryTierInfo, countries }: DevUIProps) {
+export function DevUI({
+  users,
+  currentUser,
+  devCountry,
+  countryTierInfo,
+  countries,
+}: DevUIProps) {
   const [minimized, setMinimized] = useState(false);
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -64,7 +71,7 @@ export function DevUI({ users, currentUser, devCountry, countryTierInfo, countri
     <div className="fixed bottom-4 right-4 z-50 w-72 rounded-lg border border-dashed bg-background/90 shadow-lg backdrop-blur-sm">
       <div className="flex items-center justify-between border-b border-dashed px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          DevUI
+          DevUI · {countSeededUsers()} users
         </span>
         <div className="flex gap-1">
           <Button
