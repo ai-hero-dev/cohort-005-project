@@ -37,21 +37,22 @@ The app will be running at `http://localhost:5173`.
 
 ## Scripts
 
-| Command                      | Description                                 |
-| ---------------------------- | ------------------------------------------- |
-| `npm run dev`                | Start the development server                |
-| `npm run build`              | Build for production                        |
-| `npm run test`               | Run tests with Vitest                       |
-| `npm run test:watch`         | Run tests in watch mode                     |
-| `npm run test:mutation`      | Mutation testing (Stryker) on changed files |
-| `npm run check:console`      | Print the browser console for one route     |
-| `npm run lint:oxlint`        | Lint the repository with oxlint             |
-| `npm run check:file-size`    | Block staged files over the token budget    |
-| `npm run typecheck`          | Type-check the project                      |
-| `npm run db:migrate`         | Run database migrations                     |
-| `npm run db:seed`            | Seed the database                           |
-| `npm run reset <slug>`       | Reset your repo to a lesson checkpoint      |
-| `npm run cherry-pick <slug>` | Cherry-pick a lesson's solution             |
+| Command                      | Description                                      |
+| ---------------------------- | ------------------------------------------------ |
+| `npm run dev`                | Start the development server                     |
+| `npm run build`              | Build for production                             |
+| `npm run test`               | Run tests with Vitest                            |
+| `npm run test:watch`         | Run tests in watch mode                          |
+| `npm run test:mutation`      | Mutation testing (Stryker) on changed files      |
+| `npm run check:console`      | Print the browser console for one route          |
+| `npm run check:dashboards`   | Screenshot and inspect /dashboard as three users |
+| `npm run lint:oxlint`        | Lint the repository with oxlint                  |
+| `npm run check:file-size`    | Block staged files over the token budget         |
+| `npm run typecheck`          | Type-check the project                           |
+| `npm run db:migrate`         | Run database migrations                          |
+| `npm run db:seed`            | Seed the database                                |
+| `npm run reset <slug>`       | Reset your repo to a lesson checkpoint           |
+| `npm run cherry-pick <slug>` | Cherry-pick a lesson's solution                  |
 
 ## Course Structure
 
