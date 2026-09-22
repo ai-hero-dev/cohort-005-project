@@ -92,6 +92,7 @@ You don't need these yet, but you'll be asked for them along the way. Both have 
 | `npm run build`              | Build for production                         |
 | `npm run test`               | Run tests with Vitest                        |
 | `npm run test:watch`         | Run tests in watch mode                      |
+| `npm run test:mutation`      | Mutation testing (Stryker) on changed lines  |
 | `npm run lint:oxlint`        | Lint the repository with oxlint              |
 | `npm run typecheck`          | Type-check the project                       |
 | `npm run db:generate`        | Generate a migration from the schema         |
