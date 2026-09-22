@@ -56,7 +56,7 @@ import {
   Trophy,
   RotateCcw,
 } from "lucide-react";
-import { cn, formatDuration } from "~/lib/utils";
+import { cn, formatDuration, formatRelativeTime } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
@@ -87,7 +87,10 @@ const editCommentSchema = z.object({
 
 // A note is capped at 2,000 characters, the same cap the spec sets.
 const saveNoteSchema = z.object({
-  body: z.string().trim().max(5000),
+  body: z
+    .string()
+    .trim()
+    .max(2000, "Keep your note under 2000 characters."),
 });
 
 const deleteCommentSchema = z.object({
@@ -301,7 +304,7 @@ function toggleBookmark(userId: number, lessonId: number) {
   const existing = getBookmark(userId, lessonId);
 
   if (existing) {
-    // Insert the bookmark.
+    // Bookmarking is a toggle: a second press removes the existing bookmark.
     db.delete(bookmarks).where(eq(bookmarks.id, existing.id)).run();
     return false;
   }
@@ -1107,21 +1110,29 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
   }
 
+  // Bookmarks and notes hang off a lesson the learner may read, so they check
+  // access here — loader guards don't protect actions.
   if (intent === "toggle-bookmark") {
+    await requireContentAccess(request, course.id);
+
     const nowBookmarked = toggleBookmark(currentUserId, lessonId);
     return { ok: true, bookmarked: nowBookmarked };
   }
 
   if (intent === "save-note") {
-    const parsed = parseFormData(formData, saveNoteSchema);
-    if (!parsed.success) {
-      return { ok: false, error: "That note is too long to save." };
-    }
+    await requireContentAccess(request, course.id);
 
     const lesson = getLessonById(lessonId);
     if (!lesson) {
-      // Nothing to hang the note off, so tell the form rather than the user.
-      return { ok: false, error: "Lesson not found." };
+      throw data("Lesson not found", { status: 404 });
+    }
+
+    const parsed = parseFormData(formData, saveNoteSchema);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: parsed.errors.body ?? "That note could not be saved.",
+      };
     }
 
     // An empty box means the learner cleared their note.
@@ -1554,6 +1565,14 @@ function LessonNote({
             <Button type="submit" size="sm" disabled={isSaving}>
               {isSaving ? "Saving..." : "Save note"}
             </Button>
+            {note && (
+              <span
+                suppressHydrationWarning
+                className="text-xs text-muted-foreground"
+              >
+                Last edited {formatRelativeTime(note.updatedAt)}
+              </span>
+            )}
             {error && <span className="text-sm text-red-600">{error}</span>}
           </div>
         </fetcher.Form>
