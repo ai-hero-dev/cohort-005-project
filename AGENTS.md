@@ -29,3 +29,9 @@ Read the root file and the one for the directory you are editing.
 ### Issue tracker
 
 Issues and PRDs live as GitHub issues on `ai-hero-dev/cohort-005-project`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Codebase design
+
+The `codebase-design` skill holds the vocabulary this repo uses to talk about
+its own shape — **module**, **interface**, **implementation**, **depth**,
+**seam**, **adapter**. Use those words rather than inventing new ones.
