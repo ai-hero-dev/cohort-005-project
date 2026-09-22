@@ -1,0 +1,113 @@
+name: Frontend Feedback Loop — Dashboard Inspection
+
+# A frontend feedback loop that runs on a controlled Linux box (GitHub
+# Actions) instead of Matt's own machine, mirroring the mutation-testing loop
+# shipped in #1. Manually triggered only: press "Run workflow", it boots the
+# app, logs in as three seeded users (admin, instructor, student) via the
+# app's own DevUI, screenshots /dashboard for each — and reads the DOM back
+# for each, which is the part an agent can act on.
+#
+# See .github/scripts/inspect-dashboards.sh for the browser automation, which
+# uses agent-browser (https://github.com/vercel-labs/agent-browser).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  inspect-dashboards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migrate and seed the database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Start the dev server
+        run: |
+          nohup npm run dev > /tmp/dev-server.log 2>&1 &
+          echo "Started dev server (pid $!)"
+
+      - name: Install agent-browser
+        run: |
+          npm install -g agent-browser
+          agent-browser install
+          agent-browser install --with-deps
+
+      - name: Screenshot and inspect the dashboard as three users
+        env:
+          APP_URL: http://localhost:5173
+          OUT_DIR: screenshots
+        run: bash .github/scripts/inspect-dashboards.sh
+
+      - name: Show dev server log on failure
+        if: failure()
+        run: cat /tmp/dev-server.log || true
+
+      - name: Upload the screenshots and DOM readouts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-inspection
+          path: screenshots
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Comment on the triggering PR, if any
+        if: success()
+        env:
+          # PR_ATTACH_PAT is optional. `gh pr comment --attach` uploads the
+          # images into the comment itself, which is the version worth
+          # reading — but it rejects the default GITHUB_TOKEN client-side:
+          # Actions issues a GitHub App installation token (`ghs_...`), and
+          # the attachment-upload endpoint 404s those, so gh's own allowlist
+          # refuses them upfront with "unsupported authentication type"
+          # (cli/cli#14309). No version bump fixes it; only a real PAT does.
+          # `scripts/setup-pr-attach-pat.sh` walks you through making one.
+          # Without it the comment still lands, pointing at the artifact.
+          ATTACH_PAT: ${{ secrets.PR_ATTACH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          pr_number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for branch '$BRANCH' — the artifact above has everything. Skipping PR comment."
+            exit 0
+          fi
+
+          body="Dashboard inspection from [this run]($RUN_URL).
+
+          What the DOM said, per user:
+
+          \`\`\`
+          $(cat screenshots/*.txt)
+          \`\`\`"
+
+          if [ -n "${ATTACH_PAT:-}" ]; then
+            GH_TOKEN="$ATTACH_PAT" gh pr comment "$pr_number" \
+              --body "$body" \
+              --attach screenshots/*.png
+          else
+            gh pr comment "$pr_number" \
+              --body "$body
+
+          Screenshots are in the \`dashboard-inspection\` artifact on that run. To attach them to this comment instead, run \`bash scripts/setup-pr-attach-pat.sh\`."
+          fi
