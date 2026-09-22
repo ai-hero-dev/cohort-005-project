@@ -22,7 +22,7 @@ file.
 **Do not write barrel files.** An `index.ts` that re-exports a whole subtree
 has an interface exactly as wide as its implementation, which is the definition
 of a shallow module. `refund-window/index.ts` is an entry point because it
-holds the contract and hands the day arithmetic to `lib/calendar-days.ts`; it
+holds the contract and hands the day arithmetic to the `clock` module; it
 is not a list of re-exports.
 
 Copy `refund-window/` when you start a new one. It is the template.
@@ -41,7 +41,7 @@ only visible if the route is cruised too.
 **Entry-point boundary.** Code outside a module — a route, a component, another
 module — may import that module's entry points and nothing in its subfolders.
 `~/modules/refund-window` is allowed;
-`~/modules/refund-window/lib/calendar-days` is not.
+`~/modules/clock/lib/calendar-days` is not.
 
 **Intra-module freedom.** A module's own files import each other freely. The
 boundary is around the module, not inside it.
