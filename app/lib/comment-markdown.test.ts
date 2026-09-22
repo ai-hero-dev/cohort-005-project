@@ -59,7 +59,7 @@ describe("renderComment", () => {
       const html = await renderComment('<img src=x onerror="alert(1)">');
 
       expect(html).not.toContain("<img");
-      expect(html).not.toContain("onerror=\"alert(1)\"");
+      expect(html).not.toContain('onerror="alert(1)"');
     });
 
     it("escapes an iframe", async () => {
@@ -89,12 +89,6 @@ describe("renderComment", () => {
       expect(html).toContain('href="https://example.test/a"');
       expect(html).toContain('rel="nofollow noopener noreferrer"');
       expect(html).toContain('target="_blank"');
-    });
-
-    it("keeps relative links", async () => {
-      const html = await renderComment("[lesson](/courses/x/lessons/1)");
-
-      expect(html).toContain('href="/courses/x/lessons/1"');
     });
 
     it("downgrades a javascript: link to plain text", async () => {

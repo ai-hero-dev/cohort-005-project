@@ -27,8 +27,12 @@
 # request-logger remembers which agent you chose
 /request-logger/.agent-choice.json
 
-# Generated reports. Each file is local to one machine.
+# Stryker work files and reports. This includes the result cache of
+# incremental mode (reports/stryker-incremental.json). Each file is local to
+# one machine. Do not share these files, and do not commit them.
+.stryker-tmp/
 reports/
+stryker.log
 
 # Emails written locally instead of sent
 .outbox/

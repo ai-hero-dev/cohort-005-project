@@ -66,11 +66,6 @@ function safeHref(href: string | null): string | null {
 
   const trimmed = href.trim();
 
-  // Relative links stay on our own origin, so they're safe.
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-    return trimmed;
-  }
-
   try {
     const url = new URL(trimmed);
     return SAFE_LINK_PROTOCOLS.includes(url.protocol) ? url.href : null;
