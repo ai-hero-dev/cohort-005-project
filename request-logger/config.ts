@@ -35,13 +35,13 @@ import {
 } from "./agents";
 import { discoverModelIds } from "./model-discovery";
 
-export interface WizardAnswer {
+export type WizardAnswer = {
   choice: AgentChoice;
   /** True only when the choice is to be kept. */
   remember: boolean;
-}
+};
 
-export interface AskOptions {
+export type AskOptions = {
   /**
    * Whether to ask if the answer should be kept.
    *
@@ -50,7 +50,7 @@ export interface AskOptions {
    * only make them say yes twice.
    */
   offerToRemember: boolean;
-}
+};
 
 export function loadChoice(file: string): AgentChoice | null {
   try {
@@ -81,9 +81,9 @@ export function loadChoice(file: string): AgentChoice | null {
 export function saveChoice(file: string, choice: AgentChoice): void {
   try {
     fs.writeFileSync(file, JSON.stringify(choice, null, 2) + "\n");
-  } catch (err) {
+  } catch (error) {
     console.warn(
-      `[request-logger] could not save your choice: ${(err as Error).message}`
+      `[request-logger] could not save your choice: ${(error as Error).message}`
     );
     console.warn("[request-logger] you will be asked again next time.");
   }
@@ -100,9 +100,9 @@ export function saveChoice(file: string, choice: AgentChoice): void {
 export function clearChoice(file: string): void {
   try {
     fs.rmSync(file, { force: true });
-  } catch (err) {
+  } catch (error) {
     console.warn(
-      `[request-logger] could not forget your saved choice: ${(err as Error).message}`
+      `[request-logger] could not forget your saved choice: ${(error as Error).message}`
     );
   }
 }
