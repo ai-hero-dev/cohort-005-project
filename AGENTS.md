@@ -5,6 +5,10 @@ Do these checks in this order before you report a change to `app/` as complete:
 1. `npm run typecheck`
 2. `npm run test`
 
+`.husky/pre-commit` runs both again, and then `npm run check:file-size`,
+which blocks a staged file over the token budget. See
+`docs/agents/pre-commit-checks.md`.
+
 ## When something breaks
 
 | Symptom                                         | Cause                                                                                                  |
