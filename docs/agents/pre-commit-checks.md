@@ -7,11 +7,28 @@
 | `npx lint-staged`         | Prettier over the staged files, in place      |
 | `npm run typecheck`       | `react-router typegen` then `tsc`             |
 | `npm run test`            | The whole Vitest suite                        |
+| `npm run lint:oxlint`     | oxlint over the whole repository              |
 | `npm run lint:boundaries` | dependency-cruiser over the module boundaries |
 | `npm run check:file-size` | Blocks a staged file over the token budget    |
 
 Husky installs itself from the `prepare` script, so `npm install` is all a
 fresh clone needs.
+
+## `lint:oxlint` — the linter
+
+`oxlint -c .oxlintrc.json`. oxlint is a Rust linter with the ESLint rule set
+built in, fast enough to run over the whole repository on every commit rather
+than over the staged files only.
+
+`.oxlintrc.json` sets the `correctness` category to `"warn"`, so oxlint
+reports and the commit continues. That is deliberate. A clean run on this
+repository is not available today — there are about thirty pre-existing
+warnings, most of them unused imports and unused destructured variables left
+behind when the services were folded into their routes. Turning those into
+errors would block every commit until somebody did that pass, and that pass
+is its own piece of work.
+
+Raise a rule to `"error"` when the repository is clean of it, not before.
 
 ## `check:file-size` — the token budget
 
