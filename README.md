@@ -43,6 +43,7 @@ The app will be running at `http://localhost:5173`.
 | `npm run build`              | Build for production                     |
 | `npm run test`               | Run tests with Vitest                    |
 | `npm run test:watch`         | Run tests in watch mode                  |
+| `npm run lint:oxlint`        | Lint the repository with oxlint          |
 | `npm run check:file-size`    | Block staged files over the token budget |
 | `npm run typecheck`          | Type-check the project                   |
 | `npm run db:migrate`         | Run database migrations                  |
