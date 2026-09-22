@@ -10,7 +10,7 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { defaultNotifications } from "~/lib/notifications.server";
 import { syncUser } from "~/lib/notification-preferences.server";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { AlertTriangle, Pencil, Shield, Users } from "lucide-react";
+import { AlertTriangle, Pencil, Users } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
 
 const adminUserActionSchema = z.discriminatedUnion("intent", [
@@ -115,31 +115,6 @@ export async function action({ request }: Route.ActionArgs) {
   throw data("Invalid action.", { status: 400 });
 }
 
-function roleBadge(role: string) {
-  switch (role) {
-    case UserRole.Admin:
-      return (
-        <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
-          Admin
-        </span>
-      );
-    case UserRole.Instructor:
-      return (
-        <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-          Instructor
-        </span>
-      );
-    case UserRole.Student:
-      return (
-        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
-          Student
-        </span>
-      );
-    default:
-      return null;
-  }
-}
-
 function EditableUserRow({
   user,
 }: {
@@ -214,11 +189,11 @@ function EditableUserRow({
     setIsEditing(false);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
       handleSave();
-    } else if (e.key === "Escape") {
+    } else if (event.key === "Escape") {
       handleCancel();
     }
   }
@@ -244,7 +219,7 @@ function EditableUserRow({
             ref={nameInputRef}
             type="text"
             value={editName}
-            onChange={(e) => setEditName(e.target.value)}
+            onChange={(event) => setEditName(event.target.value)}
             onKeyDown={handleKeyDown}
             className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
@@ -257,7 +232,7 @@ function EditableUserRow({
           <input
             type="email"
             value={editEmail}
-            onChange={(e) => setEditEmail(e.target.value)}
+            onChange={(event) => setEditEmail(event.target.value)}
             onKeyDown={handleKeyDown}
             className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
@@ -370,6 +345,7 @@ export function HydrateFallback() {
               </thead>
               <tbody>
                 {Array.from({ length: 8 }).map((_, i) => (
+                  // oxlint-disable-next-line react/no-array-index-key -- placeholders never reorder
                   <TableRowSkeleton key={i} />
                 ))}
               </tbody>
