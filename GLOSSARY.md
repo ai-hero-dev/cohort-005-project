@@ -105,6 +105,17 @@ The furthest point a Learner has reached in each Lesson video, added up.
 **Rating**:
 One to five stars left on a Course by a Learner, one per Learner per Course.
 
+**Bookmark**:
+A Learner's flag on a Lesson, so they can find it again. One per Learner per
+Lesson, and the Learner is the only one who sees it.
+_Avoid_: Favourite, star, saved item
+
+**Note**:
+A Learner's own writing about a Lesson, private to the Learner who wrote it.
+One per Learner per Lesson. A Note is not a Comment — a Comment is addressed
+to other people, a Note is addressed to nobody.
+_Avoid_: Annotation, scratchpad, memo
+
 **Comment**:
 A note left by a Learner under a Lesson. A Comment an Instructor has not yet
 answered is a Question, and waits in the Instructor's question queue.

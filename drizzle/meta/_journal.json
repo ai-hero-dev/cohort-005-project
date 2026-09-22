@@ -85,6 +85,13 @@
       "when": 1790085573076,
       "tag": "0011_wandering_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790085770086,
+      "tag": "0012_colossal_maggott",
+      "breakpoints": true
     }
   ]
 }
