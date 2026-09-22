@@ -2,9 +2,22 @@ import { Link } from "react-router";
 import { useState, useEffect } from "react";
 import type { Route } from "./+types/home";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "~/components/ui/card";
 import { CourseStatus } from "~/db/schema";
-import { BookOpen, GraduationCap, Users, ArrowRight, User, Moon, Sun } from "lucide-react";
+import {
+  BookOpen,
+  GraduationCap,
+  Users,
+  ArrowRight,
+  User,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { DevUI } from "~/components/dev-ui";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
@@ -12,6 +25,11 @@ import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, like, and, or, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { courses, categories, users, modules, lessons } from "~/db/schema";
+
+/** How many users the seed put in the database. */
+function countSeededUsers(): number {
+  return db.select({ id: users.id }).from(users).all().length;
+}
 
 function getAllUsers() {
   return db.select().from(users).all();
@@ -107,12 +125,23 @@ function getLessonCountForCourse(courseId: number) {
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "Cadence — Learn at your own pace" },
-    { name: "description", content: "A modern course platform for developers. Browse courses, track your progress, and learn at your own pace." },
+    {
+      name: "description",
+      content:
+        "A modern course platform for developers. Browse courses, track your progress, and learn at your own pace.",
+    },
   ];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const courses = buildCourseQuery(null, null, CourseStatus.Published, "newest", 50, 0);
+  const courses = buildCourseQuery(
+    null,
+    null,
+    CourseStatus.Published,
+    "newest",
+    50,
+    0
+  );
   const featured = courses.slice(0, 3).map((course) => ({
     ...course,
     lessonCount: getLessonCountForCourse(course.id),
@@ -135,11 +164,22 @@ export async function loader({ request }: Route.LoaderArgs) {
     devCountry,
     countryTierInfo,
     countries: COUNTRIES,
+    seededUserCount: countSeededUsers(),
   };
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { featuredCourses, totalCourses, totalCategories, users, currentUser, devCountry, countryTierInfo, countries } = loaderData;
+  const {
+    featuredCourses,
+    totalCourses,
+    totalCategories,
+    users,
+    currentUser,
+    devCountry,
+    countryTierInfo,
+    countries,
+    seededUserCount,
+  } = loaderData;
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -174,7 +214,11 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground"
               title={isDark ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              {isDark ? (
+                <Sun className="size-4" />
+              ) : (
+                <Moon className="size-4" />
+              )}
             </button>
             {currentUser ? (
               <Button asChild size="sm">
@@ -204,8 +248,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           <span className="text-muted-foreground">at your own pace</span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-          Structured courses built by experienced instructors. Track your progress,
-          take quizzes, and build real-world skills.
+          Structured courses built by experienced instructors. Track your
+          progress, take quizzes, and build real-world skills.
         </p>
         <div className="mt-10 flex items-center justify-center gap-4">
           <Button asChild size="lg">
@@ -238,7 +282,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               <Users className="size-6 text-primary" />
             </div>
             <p className="text-2xl font-bold">Self-paced</p>
-            <p className="text-sm text-muted-foreground">Learn on your schedule</p>
+            <p className="text-sm text-muted-foreground">
+              Learn on your schedule
+            </p>
           </div>
         </div>
       </section>
@@ -247,7 +293,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <section className="mx-auto max-w-6xl px-6 py-20">
           <div className="mb-10 flex items-end justify-between">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight">Featured Courses</h2>
+              <h2 className="text-3xl font-bold tracking-tight">
+                Featured Courses
+              </h2>
               <p className="mt-2 text-muted-foreground">
                 Start learning with our most popular courses
               </p>
@@ -261,7 +309,11 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           </div>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {featuredCourses.map((course) => (
-              <Link key={course.id} to={`/courses/${course.slug}`} className="group">
+              <Link
+                key={course.id}
+                to={`/courses/${course.slug}`}
+                className="group"
+              >
                 <Card className="h-full overflow-hidden pt-0 transition-shadow group-hover:shadow-md">
                   <CourseImage
                     src={course.coverImageUrl}
@@ -307,6 +359,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         devCountry={devCountry}
         countryTierInfo={countryTierInfo}
         countries={countries}
+        seededUserCount={seededUserCount}
       />
     </div>
   );
