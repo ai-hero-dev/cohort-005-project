@@ -93,7 +93,7 @@ function getCourseWithDetails(id: number) {
       ? db
           .select()
           .from(lessons)
-          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid)))!)
+          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid))))
           .orderBy(lessons.position)
           .all()
       : [];
@@ -119,7 +119,7 @@ function getLessonCountForCourse(courseId: number) {
   const count = db
     .select({ count: sql<number>`count(*)` })
     .from(lessons)
-    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id))))
     .get();
 
   return count?.count ?? 0;
@@ -137,7 +137,7 @@ function getCourseLessonIds(courseId: number): number[] {
   const courseLessons = db
     .select({ id: lessons.id })
     .from(lessons)
-    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id))))
     .all();
 
   return courseLessons.map((l) => l.id);
@@ -159,7 +159,7 @@ function calculateProgress(
         durationMinutes: lessons.durationMinutes,
       })
       .from(lessons)
-      .where(or(...lessonIds.map((id) => eq(lessons.id, id)))!)
+      .where(or(...lessonIds.map((id) => eq(lessons.id, id))))
       .all();
 
     const totalDuration = courseLessons.reduce(
@@ -176,7 +176,7 @@ function calculateProgress(
         and(
           eq(lessonProgress.userId, userId),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
-          or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+          or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))
         )
       )
       .all();
@@ -197,7 +197,7 @@ function calculateProgress(
       and(
         eq(lessonProgress.userId, userId),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
-        or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
+        or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))
       )
     )
     .get();
@@ -217,7 +217,7 @@ function getLessonProgressForCourse(userId: number, courseId: number) {
   const courseLessons = db
     .select({ id: lessons.id })
     .from(lessons)
-    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id)))!)
+    .where(or(...courseModules.map((m) => eq(lessons.moduleId, m.id))))
     .all();
 
   if (courseLessons.length === 0) return [];
@@ -228,7 +228,7 @@ function getLessonProgressForCourse(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
-        or(...courseLessons.map((l) => eq(lessonProgress.lessonId, l.id)))!
+        or(...courseLessons.map((l) => eq(lessonProgress.lessonId, l.id)))
       )
     )
     .all();
@@ -492,6 +492,7 @@ export function HydrateFallback() {
       <Skeleton className="mb-4 h-8 w-40" />
       <div className="space-y-4">
         {Array.from({ length: 3 }).map((_, i) => (
+          // oxlint-disable-next-line react/no-array-index-key -- placeholders never reorder
           <Card key={i}>
             <CardHeader>
               <Skeleton className="h-5 w-48" />
@@ -500,6 +501,7 @@ export function HydrateFallback() {
             <CardContent>
               <div className="space-y-2">
                 {Array.from({ length: 4 }).map((_, j) => (
+                  // oxlint-disable-next-line react/no-array-index-key -- placeholders never reorder
                   <Skeleton key={j} className="h-8 w-full" />
                 ))}
               </div>
@@ -683,6 +685,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
         <div className="lg:col-span-2">
           <div
             className="prose prose-neutral dark:prose-invert max-w-none"
+            // oxlint-disable-next-line react/no-danger -- the instructor wrote this Markdown
             dangerouslySetInnerHTML={{ __html: salesCopyHtml }}
           />
 

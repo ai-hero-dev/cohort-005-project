@@ -5,19 +5,19 @@ import { cn } from "~/lib/utils";
 import type { UserRole } from "~/db/schema";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
 
-interface DevUser {
+type DevUser = {
   id: number;
   name: string;
   role: UserRole;
-}
+};
 
-interface DevUIProps {
+type DevUIProps = {
   users: DevUser[];
   currentUser: DevUser | null;
   devCountry: string | null;
   countryTierInfo: { tier: number; discount: number; label: string };
   countries: { code: string; name: string }[];
-}
+};
 
 const roleBadgeColors: Record<string, string> = {
   admin: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
@@ -150,7 +150,7 @@ export function DevUI({
             <select
               name="country"
               defaultValue={devCountry ?? ""}
-              onChange={(e) => e.target.form?.requestSubmit()}
+              onChange={(event) => event.target.form?.requestSubmit()}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="">Auto-detect</option>

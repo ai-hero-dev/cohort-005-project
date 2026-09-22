@@ -34,10 +34,10 @@ export function parseModelIds(body: unknown): string[] {
   return [...new Set(ids)];
 }
 
-interface DiscoverOptions {
+type DiscoverOptions = {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-}
+};
 
 export async function discoverModelIds(
   baseUrl: string,
