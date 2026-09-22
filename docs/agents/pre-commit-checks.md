@@ -30,6 +30,35 @@ is its own piece of work.
 
 Raise a rule to `"error"` when the repository is clean of it, not before.
 
+### The custom rule — `route-config/matches-filename`
+
+`scripts/lint-rules/route-config-matches-filename.js`, a JS plugin loaded
+through `jsPlugins` in `.oxlintrc.json`.
+
+`app/routes.ts` registers every route by hand — a URL path, and the file that
+serves it. TypeScript checks that the file exists. It has no opinion about
+whether the path a visitor types matches the file's name, so the two drift,
+and the route keeps working at an address nobody links to.
+
+The rule reads each `route(path, file)` entry, derives the path the filename
+claims (a dot is a separator, `$x` is `:x`), and reports the entry when the
+two disagree — or when the file is not on disk.
+
+The first run reported one entry: `routes/redeem.$code.tsx` was registered at
+`invite/:code`, so `/redeem/:code` — the address `team.tsx` copies into an
+invite link — served nothing. The path was the lie, so this commit corrected
+it back to `redeem/:code`, and the rule now reports nothing. Read the message
+before you change anything: the rule says which two things disagree, not which
+of them is wrong.
+
+It is a **warning**. A path can legitimately disagree with a filename, and a
+rule that has been right once is not yet a rule that may block a commit.
+
+Adding another: write a plugin file under `scripts/lint-rules/`, add it to
+`jsPlugins`, and add `<plugin-name>/<rule-name>` under `rules`. oxlint's JS
+plugin API is ESLint-shaped — `create(context)` and `context.report()` — and
+runs in Node through oxlint's Rust core.
+
 ## `check:file-size` — the token budget
 
 `scripts/check-file-size.sh`. For every **staged** file it counts bytes,
