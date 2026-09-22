@@ -47,7 +47,7 @@ export default [
     route("saved", "routes/saved.tsx"),
     route("settings", "routes/settings.tsx"),
     route("team", "routes/team.tsx"),
-    route("invite/:code", "routes/redeem.$code.tsx"),
+    route("redeem/:code", "routes/redeem.$code.tsx"),
   ]),
   route("signup", "routes/signup.tsx"),
   route("login", "routes/login.tsx"),
