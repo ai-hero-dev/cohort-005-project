@@ -16,7 +16,6 @@ import {
   ArrowLeft,
   ClipboardList,
   ExternalLink,
-  Github,
   Save,
 } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
@@ -179,8 +178,8 @@ export default function InstructorLessonEditor({
 
   useEffect(() => {
     if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -302,7 +301,7 @@ export default function InstructorLessonEditor({
                 id="videoUrl"
                 type="url"
                 value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
+                onChange={(event) => setVideoUrl(event.target.value)}
                 placeholder="https://www.youtube.com/watch?v=..."
               />
             </div>
@@ -325,7 +324,7 @@ export default function InstructorLessonEditor({
                 type="number"
                 min="0"
                 value={durationMinutes}
-                onChange={(e) => setDurationMinutes(e.target.value)}
+                onChange={(event) => setDurationMinutes(event.target.value)}
                 placeholder="e.g. 15"
                 className="max-w-32"
               />
@@ -348,7 +347,7 @@ export default function InstructorLessonEditor({
                 id="githubRepoUrl"
                 type="url"
                 value={githubRepoUrl}
-                onChange={(e) => setGithubRepoUrl(e.target.value)}
+                onChange={(event) => setGithubRepoUrl(event.target.value)}
                 placeholder="https://github.com/owner/repo"
               />
             </div>

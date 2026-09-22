@@ -116,7 +116,7 @@ export type FeedState = {
  * One signed-in person's Notification Feed in the browser, kept up to date
  * live. Feed components only ever talk to this.
  */
-export interface NotificationFeed {
+export type NotificationFeed = {
   getState(): FeedState;
   /** Calls `listener` whenever the state changes. Returns an unsubscribe. */
   subscribe(listener: () => void): () => void;
@@ -130,7 +130,7 @@ export interface NotificationFeed {
   markAllRead(): Promise<void>;
   /** Closes the live connection. The feed is unusable afterwards. */
   dispose(): void;
-}
+};
 
 const EMPTY_STATE: FeedState = {
   notifications: [],

@@ -92,9 +92,10 @@ function CommentForm({
       <Textarea
         name="body"
         value={body}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(event) => setBody(event.target.value)}
         placeholder={placeholder}
         rows={4}
+        // oxlint-disable-next-line jsx-a11y/no-autofocus -- focus moves to the form the person just opened
         autoFocus={autoFocus}
         aria-label={placeholder}
       />
@@ -279,6 +280,7 @@ function CommentItem({
           ) : (
             <div
               className="prose prose-sm prose-neutral dark:prose-invert mt-1 max-w-none"
+              // oxlint-disable-next-line react/no-danger -- renderComment escapes the HTML in the Markdown
               dangerouslySetInnerHTML={{ __html: comment.bodyHtml }}
             />
           )}
