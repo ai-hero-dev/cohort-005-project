@@ -174,7 +174,7 @@ already on `main`, six sections of free irritation.
 | `extract-a-service-from-a-loader` | LIVE | Narrow one bloated loader behind a seam and test it. |
 | `wire-deep-module-boundary` | LIVE | Point `setup-deep-modules-ts` at the narrowed module. |
 | `rfc-to-spec` · `rfc-to-tickets` | LIVE | RFC → spec → tickets → shipped, consuming the live output. |
-| `collapse-ppp-passthrough` | LIVE | `app/lib/ppp.ts` — collapse four forwarding functions into one. |
+| ~~`collapse-ppp-passthrough`~~ | **DROPPED** | Not built. *The Pass-Through Module* ends with the viewer having *named* a pass-through, which changes nothing on the tree, so it needs no commit. `app/lib/ppp.ts` is byte-identical from `main` to the tip, which is what keeps the lesson's subject intact. |
 | `merge-date-modules` | LIVE | Merge them back, test as a larger unit. |
 
 **Cut:** seeding a vibe-coded mess (the worsening on `main` is now far worse than any seed).
@@ -182,7 +182,7 @@ already on `main`, six sections of free irritation.
 **Cut:** the "deep module with no boundary enforcement" seed and the "two modules, one adapter" seed
 — both are satisfied by the section's own earlier live output.
 
-`app/lib/access.server.ts:103-150` is the free contrast case: `requireContentAccess` and
+`app/lib/access.server.ts:149-184` (on `main`; `:153-188` at the stack tip) is the free contrast case: `requireContentAccess` and
 `requireStaff` look like pass-throughs and are not — the throw is the added abstraction. "Looks like a
 pass-through, is not" is a better beat than the pass-through itself.
 
@@ -265,9 +265,11 @@ T2 date range┘              └─→ T5 cron: generate last month
                              self-filing fix PR
 ```
 
-T6 is the hero moment and it is deliberately **not** in the spec. Only five indexes exist in the whole
-schema and none covers `purchases.created_at` or `courses.instructor_id`, so every date predicate in
-the new report is an unindexed table scan — guaranteed, not hoped for. The detector fires on work the
+T6 is the hero moment and it is deliberately **not** in the spec. No index covers `purchases.created_at` or
+`courses.instructor_id` — verified at the stack tip, in the schema and in raw SQL. So every date
+predicate in the new report is an unindexed table scan, guaranteed rather than hoped for. Better
+still, `purchases.created_at` is an ISO **text** column, so the scan is worse than a date type would
+be. (Do not quote a total index count: `main` has seven and the tip has eleven.) The detector fires on work the
 factory has just done, the system writes a ticket about itself, and the self-filing fix PR closes it.
 That turns the diagram exercises in the three lessons before it into diagrams of something that then
 happens for real.

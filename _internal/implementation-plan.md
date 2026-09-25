@@ -246,7 +246,7 @@ Vibe-Coded Mess" setup beat is now satisfied by `main` itself. **This is A2 payi
 
 **No stub for L15** *The Pass-Through Module* — it also ends in naming, not changing.
 `app/lib/ppp.ts` is the free subject: four forwarding functions, already on `main`. The contrast case is
-`app/lib/access.server.ts:103-150`, where `requireContentAccess` and `requireStaff` look like
+`app/lib/access.server.ts:149-184` on `main` (`:153-188` at the tip), where `requireContentAccess` and `requireStaff` look like
 pass-throughs and are not, because the throw is the added abstraction.
 
 **Cut:** the architecture RFC seed (students use their own), the "deep module with no boundary
@@ -385,10 +385,10 @@ Recorded as they were found. Each one is a thing a lesson script must know.
 
 | Note | Lesson affected |
 |---|---|
-| **Re-seed on the filming day.** `pnpm db:seed` writes purchases at `daysAgo()` offsets. The 11 users who can see "Cancel my purchase" age out of the 14-day window as real time passes. | Domain Language L3 |
+| **Re-seed on the filming day.** `pnpm db:seed` writes purchases at `daysAgo()` offsets. 13 purchases sit inside the 14-day window at seed time, and fewer pass completion and watch-time. They age out as real time passes. | Domain Language L3 |
 | **"Reversal" is in the terminal, not the browser.** No mail transport is wired, so `buildReversalEmail` is `console.log`ged. The student meets the third name in the dev-server output. Say so on camera. | Domain Language L3 |
 | **Name Anika Bose (100% complete) and Caleb Ncube (78%) on camera.** Both bought inside the window, both see no button, and both would have a direct POST accepted — because the action copy of the rule is missing the completion check. A student reading the action alone cannot notice an *absent* check. | Domain Language L3 |
-| **Do not say "negative offset reads as the next day."** It is backwards. A negative offset reads a late-evening UTC purchase as the *earlier* day; a positive offset reads it as the next. The off-by-one is real in both directions. | Domain Language L3 |
+| **Get the offset direction right on camera.** A **positive** offset reads a late-evening UTC purchase as the **next** day. A **negative** offset reads an **early-morning** UTC purchase as the **day before**. A 23:30Z purchase does not move under any negative offset. The off-by-one is real in both directions, but never in the same direction for the same timestamp. | Domain Language L3 |
 | **The `mutation-testing` skill was stripped with Stryker** and must re-land with the `stryker-pointed-at-diff` seed. | Feedback Loops L4 |
 | **`.agents/skills/adding-a-route/` was deleted**, not reworded. It was crash-course leftover that told agents to build a service layer. | — |
 
@@ -419,7 +419,7 @@ Everything in Parts 1 to 4 is built and pushed. `origin/main` is `060ba96`;
 | `worsen-the-services` | `app/services/` deleted. 16 services inlined into 26 routes, duplicated. `analyticsService` folded into `instructor.analytics.tsx` alone, which is now 1,944 lines. 12 test files and 391 tests deleted. `testing-services` and `adding-a-route` skills deleted. `AGENTS.md` architecture rule removed. 377 tests still green. |
 | `seed-refund-feature` | `refunds` table, migration `0009`, request flow. Three names for one thing. Eligibility chain written twice and drifted. A real timezone bug, reproduced in both directions. |
 | `strip-stryker-from-main` | Config, script, npm script, devDeps, AGENTS.md section, README row, vitest exclusion, `.gitignore` block, and the `mutation-testing` skill. |
-| `strip-screenshot-workflow` | `.github/` now empty, so the factory section's workflow is the repo's first. |
+| `strip-screenshot-workflow` | `.github/` now empty on `main`. The factory workflow is **not** the repo's first in the stack — `agent-browser` re-lands a workflow ten commits earlier, so Factory Part One L3's "only the implementer workflow" is false. |
 | `reset-coding-standards` | Joke line replaced with three real rules that collide with nothing later. |
 
 ### The stack — 44 commits, all filled
@@ -477,3 +477,55 @@ layer back.
 | SF Part One L4 | Says `CODING_STANDARDS.md` gains its **first** rule. It has six by then. |
 | SF Part Two L1 | Says the file carries one rule. It carries seven. |
 | SF Part Two L6 | The gist needs two files — the workflow and `.github/schemas/spec-decomposition.json`. |
+
+
+---
+
+## Part 9 — Audit and fix round
+
+The finished history was audited by a reviewer given only the repo and this spec, with no account of
+how it was built. It found 7 blockers and 9 lesser defects. All are fixed. The stack stayed at 44
+commits, unique slugs, no empty commits, 430 tests green.
+
+### Where these documents live
+
+**On `origin/internal/planning-docs`, not on `main`.** They were briefly committed to `main` and that
+was wrong: they name every planted bug, every lesson's answer, and the whole service-layer seam that
+the worsening exists to erase. A student clones `main`, and so does any agent they point at the repo.
+Keep them off it.
+
+### The blockers, and what they were
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | These documents were shipping inside the student's clone | Moved to their own branch |
+| 2 | `--json-schema` was given a **file path**; the CLI only accepts inline JSON. Three steps, two workflows | Read the schema in a prior step, pass its contents through `env:` |
+| 3 | Both schemas declared draft 2020-12; the validator is draft-07. And neither explore branch used `always()`, so on a failed step **neither branch ran** — and the branch is the lesson | draft-07, and `halt` is now the honest default |
+| 4 | The finale labelled the PR with `GITHUB_TOKEN`, which cannot start another workflow, so the review workflow never woke. A `\|\| echo ::warning` hid it | `FACTORY_PAT`, and the step now fails loudly |
+| 5 | Review L4 claimed to fix the seeded comment drift and fixed none of it | One instance fixed; the other nine survive, which is what L6's rule is written about |
+| 6 | The hydration loop reported a **false green on its first run** — Vite answers 504 on a new client dependency and the script counted 504 as "network" | Prime the optimizer before the measured load, reusing the repo's own fix from `daf172c` |
+| 7 | The in-repo `domain-modeling` skill still said `CONTEXT.md`, so L3's live payoff would create the wrong file | All skills now say `GLOSSARY.md`, fixed at each commit that lands one |
+
+### Things the audit got wrong, and the fixer proved wrong
+
+One finding did not hold. The audit said `extract-a-service-from-a-loader` adds a **third** copy of the
+refund-window arithmetic. It does not — it deletes the analytics loader's copy and calls the service.
+Verified against a pre-fix backup, so no rebase introduced it. No change was made. **A clean audit
+finding is still a claim; check it before acting on it.**
+
+### Things the audit missed, found while fixing
+
+| Found | Why it mattered |
+|---|---|
+| **Both JSON schemas contained apostrophes.** Passing a schema inline means single-quoting it, and an apostrophe would have ended the quoting and split the argument — losing the schema with no error at all | Reworded, and each reader step now fails loudly if an apostrophe returns |
+| **The `agent:review` label is never created anywhere** | The hand-off would have failed even with the right token |
+| **The `*/15` cron can never fire on `live-run-through`.** GitHub only schedules the default branch's copy of a workflow file | Dispatch ref pinned via a repo variable; the caveat is now stated where it will be read |
+| **The stale rule count spanned 27 commits, not one** | Each lesson now states its own true count |
+| **The review-fix commit had promoted two comments, not one** | Both are back where the seed put them |
+
+### Lesson-design calls taken during the fix round
+
+| Call | Reason |
+|---|---|
+| **The route drift is repaired in `custom-lint-rule`**, the lesson that catches it | Left standing it caused two live 404s in the redeem flow for six sections, in the very files the factory's coupon feature edits. "Warn, not error" still stands on the repo's other standing warnings |
+| **The cron's dispatch ref is a repo variable, not a hardcoded branch** | The file ships to students who will point it at their own branch |
