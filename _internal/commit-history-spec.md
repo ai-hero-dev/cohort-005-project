@@ -173,14 +173,27 @@ already on `main`, six sections of free irritation.
 | `untestable-date-dependency` | SEED | The date module. No API key, no dev-server complication, composes with the Refund 14-day window, and the merge lesson needs this seam later. |
 | `extract-a-service-from-a-loader` | LIVE | Narrow one bloated loader behind a seam and test it. |
 | `wire-deep-module-boundary` | LIVE | Point `setup-deep-modules-ts` at the narrowed module. |
-| `rfc-to-spec` · `rfc-to-tickets` | LIVE | RFC → spec → tickets → shipped, consuming the live output. |
-| ~~`collapse-ppp-passthrough`~~ | **DROPPED** | Not built. *The Pass-Through Module* ends with the viewer having *named* a pass-through, which changes nothing on the tree, so it needs no commit. `app/lib/ppp.ts` is byte-identical from `main` to the tip, which is what keeps the lesson's subject intact. |
+| `architecture-rfc` · `rfc-to-shipped-fix` | LIVE | RFC → spec → tickets → shipped, consuming the live output. `rfc-to-shipped-fix` is also the **reset point** for the next two lessons (below). |
+| ~~`collapse-ppp-passthrough`~~ | **DROPPED** | Not built. *The Pass-Through Module* ends with the viewer having *named* a pass-through, which changes nothing on the tree, so it needs no commit. Its subject is `app/services/clock/` as `rfc-to-shipped-fix` leaves it, which learners reach by reset (below). `app/lib/ppp.ts` stays byte-identical from `main` to the tip as a second example. |
 | `merge-date-modules` | LIVE | Merge them back, test as a larger unit. |
 
 **Cut:** seeding a vibe-coded mess (the worsening on `main` is now far worse than any seed).
 **Cut:** the architecture RFC seed (students use their own generated version).
-**Cut:** the "deep module with no boundary enforcement" seed and the "two modules, one adapter" seed
-— both are satisfied by the section's own earlier live output.
+**Cut:** the "deep module with no boundary enforcement" seed — satisfied by the section's own earlier
+live output (`extract-a-service-from-a-loader`).
+
+**Reset point, not live output:** the "two modules, one caller" state. A Dry Run Chain (L5 → L10 in one
+clone, a fresh session per lesson) showed that a learner's own L8 does not reliably split the day maths
+out into `app/services/clock/`. The Student's did not, so *The Pass-Through Module* had no subject and
+*Merge It Back Together* had nothing to merge. Both lessons now start with
+`npm run reset rfc-to-shipped-fix`, the recorded post-L8 tree. The reset discards the learner's L5–L8
+work; by then their tree has diverged from the recording anyway (a different module root, a different
+ticket count).
+
+At that commit the `Clock` seam has two adapters (`systemClock` in production, `clockAt` in the tests),
+so it is a real seam. The day maths behind it (`addDays`, `daysBetween`) has one caller,
+`refund-window`. The merge lesson is about the one caller, not the adapter count — an agent will
+correctly argue "two adapters, so it's a real seam" if the lesson frames it as the seam.
 
 `app/lib/access.server.ts:149-184` (on `main`; `:153-188` at the stack tip) is the free contrast case: `requireContentAccess` and
 `requireStaff` look like pass-throughs and are not — the throw is the added abstraction. "Looks like a
