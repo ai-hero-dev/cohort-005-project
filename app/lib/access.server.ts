@@ -30,10 +30,6 @@ function findEnrollment(userId: number, courseId: number) {
     .get();
 }
 
-function isUserEnrolled(userId: number, courseId: number) {
-  return !!findEnrollment(userId, courseId);
-}
-
 function findPurchase(userId: number, courseId: number) {
   return db
     .select()
@@ -60,6 +56,8 @@ export type Access = {
   /** Owning instructor or admin — the people who speak for the course. */
   isStaff: boolean;
   enrolled: boolean;
+  /** Their Enrollment on this course, when they have one. */
+  enrollmentId: number | null;
   pppBlocked: boolean;
   pppBlockedCountry: string | null;
   pppPurchaseCountry: string | null;
@@ -77,6 +75,7 @@ const SIGNED_OUT: Access = {
   isOwningInstructor: false,
   isStaff: false,
   enrolled: false,
+  enrollmentId: null,
   pppBlocked: false,
   pppBlockedCountry: null,
   pppPurchaseCountry: null,
@@ -97,7 +96,8 @@ export async function getAccess(
   const isAdmin = user.role === UserRole.Admin;
   const isOwningInstructor = course?.instructorId === userId;
   const isStaff = isAdmin || isOwningInstructor;
-  const enrolled = isUserEnrolled(userId, courseId);
+  const enrollment = findEnrollment(userId, courseId);
+  const enrolled = !!enrollment;
 
   // PPP only restricts students who bought at a discount — staff are exempt.
   let ppp = {
@@ -124,6 +124,7 @@ export async function getAccess(
     isOwningInstructor,
     isStaff,
     enrolled,
+    enrollmentId: enrollment?.id ?? null,
     pppBlocked: ppp.blocked,
     pppBlockedCountry: ppp.blockedCountry,
     pppPurchaseCountry: ppp.purchaseCountry,
