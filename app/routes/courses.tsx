@@ -13,6 +13,7 @@ import {
   CourseStatus,
   LessonProgressStatus,
 } from "~/db/schema";
+import { isLiveEnrollment, isLiveProgress } from "~/lib/enrollments.server";
 import { eq, like, and, or, sql, inArray } from "drizzle-orm";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
@@ -127,7 +128,7 @@ function getUserEnrolledCourses(userId: number) {
     })
     .from(enrollmentsTable)
     .innerJoin(coursesTable, eq(enrollmentsTable.courseId, coursesTable.id))
-    .where(eq(enrollmentsTable.userId, userId))
+    .where(and(eq(enrollmentsTable.userId, userId), isLiveEnrollment))
     .all();
 }
 
@@ -181,6 +182,7 @@ function calculateProgress(
       .where(
         and(
           eq(lessonProgress.userId, userId),
+          isLiveProgress(),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
           or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
         )
@@ -202,6 +204,7 @@ function calculateProgress(
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )
@@ -221,6 +224,7 @@ function getCompletedLessonCount(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )

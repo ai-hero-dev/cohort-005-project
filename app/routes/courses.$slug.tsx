@@ -19,8 +19,8 @@ import {
   refunds,
   videoWatchEvents,
   LessonProgressStatus,
-  RefundStatus,
 } from "~/db/schema";
+import { findLiveEnrollment, isLiveProgress } from "~/lib/enrollments.server";
 import { eq, and, or, sql, inArray, isNotNull } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
@@ -49,10 +49,8 @@ import { data, isRouteErrorResponse } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
-import {
-  calculatePppPrice,
-  getCountryTierInfo,
-} from "~/lib/ppp";
+import { calculatePppPrice, getCountryTierInfo } from "~/lib/ppp";
+import { refundBlocker, refundableAmount } from "~/lib/refunds";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
 import { StarRating, StarRatingInput } from "~/components/star-rating";
@@ -137,13 +135,7 @@ function getLessonCountForCourse(courseId: number) {
 }
 
 function findEnrollment(userId: number, courseId: number) {
-  return db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
+  return findLiveEnrollment(userId, courseId);
 }
 
 function isUserEnrolled(userId: number, courseId: number) {
@@ -200,6 +192,7 @@ function calculateProgress(
       .where(
         and(
           eq(lessonProgress.userId, userId),
+          isLiveProgress(),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
           or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
         )
@@ -221,6 +214,7 @@ function calculateProgress(
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )
@@ -253,6 +247,7 @@ function getLessonProgressForCourse(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         or(...courseLessons.map((l) => eq(lessonProgress.lessonId, l.id)))!
       )
     )
@@ -284,6 +279,7 @@ function getNextIncompleteLesson(userId: number, courseId: number) {
         .where(
           and(
             eq(lessonProgress.userId, userId),
+            isLiveProgress(),
             eq(lessonProgress.lessonId, lesson.id)
           )
         )
@@ -309,7 +305,10 @@ function findRating(userId: number, courseId: number) {
     .select()
     .from(courseRatings)
     .where(
-      and(eq(courseRatings.userId, userId), eq(courseRatings.courseId, courseId))
+      and(
+        eq(courseRatings.userId, userId),
+        eq(courseRatings.courseId, courseId)
+      )
     )
     .get();
 }
@@ -387,17 +386,12 @@ function getPurchaseForCourse(userId: number, courseId: number) {
     .get();
 }
 
-function getOpenRefundRequest(purchaseId: number) {
+function getRefundsForPurchase(purchaseId: number) {
   return db
-    .select({ id: refunds.id })
+    .select({ status: refunds.status })
     .from(refunds)
-    .where(
-      and(
-        eq(refunds.purchaseId, purchaseId),
-        eq(refunds.status, RefundStatus.Open)
-      )
-    )
-    .get();
+    .where(eq(refunds.purchaseId, purchaseId))
+    .all();
 }
 
 function getCompletedLessonCount(userId: number, lessonIds: number[]) {
@@ -409,6 +403,7 @@ function getCompletedLessonCount(userId: number, lessonIds: number[]) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         inArray(lessonProgress.lessonId, lessonIds)
       )
@@ -455,7 +450,7 @@ function getRefundOffer(userId: number, course: { id: number }) {
   const purchase = getPurchaseForCourse(userId, course.id);
 
   if (!purchase) return null;
-  if (getOpenRefundRequest(purchase.id)) return null;
+  if (refundBlocker(getRefundsForPurchase(purchase.id))) return null;
 
   const purchasedDay = asDayString(new Date(purchase.createdAt));
   const windowEnd = new Date(purchase.createdAt);
@@ -490,7 +485,7 @@ function getRefundOffer(userId: number, course: { id: number }) {
 
   if (claimedSeat) return null;
 
-  return { amount: purchase.amountPaid, lastDayInWindow };
+  return { amount: refundableAmount(purchase), lastDayInWindow };
 }
 
 const ratingSchema = z.object({

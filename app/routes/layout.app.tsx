@@ -18,6 +18,7 @@ import {
   TeamMemberRole,
   LessonProgressStatus,
 } from "~/db/schema";
+import { isLiveProgress } from "~/lib/enrollments.server";
 
 function getAllUsers() {
   return db.select().from(users).all();
@@ -98,6 +99,7 @@ function calculateProgress(
       .where(
         and(
           eq(lessonProgress.userId, userId),
+          isLiveProgress(),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
           or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
         )
@@ -119,6 +121,7 @@ function calculateProgress(
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )
@@ -138,6 +141,7 @@ function getCompletedLessonCount(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )
@@ -164,7 +168,7 @@ function getRecentlyProgressedCourses(userId: number, limit: number = 3) {
     .innerJoin(lessons, eq(lessonProgress.lessonId, lessons.id))
     .innerJoin(modules, eq(lessons.moduleId, modules.id))
     .innerJoin(courses, eq(modules.courseId, courses.id))
-    .where(eq(lessonProgress.userId, userId))
+    .where(and(eq(lessonProgress.userId, userId), isLiveProgress()))
     .groupBy(courses.id)
     .orderBy(desc(sql`max(${lessonProgress.id})`))
     .limit(limit)
@@ -185,7 +189,11 @@ export async function loader({ request }: Route.LoaderArgs) {
           course.courseId
         );
         const totalLessons = getTotalLessonCount(course.courseId);
-        const progress = calculateProgress(currentUserId, course.courseId, false);
+        const progress = calculateProgress(
+          currentUserId,
+          course.courseId,
+          false
+        );
         return {
           courseId: course.courseId,
           title: course.courseTitle,

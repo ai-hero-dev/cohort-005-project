@@ -16,6 +16,7 @@ import {
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
+import { refundBlocker, refundableAmount } from "~/lib/refunds";
 import { formatPrice } from "~/lib/utils";
 
 const REFUND_WINDOW_DAYS = 14;
@@ -57,17 +58,12 @@ function getLessonIdsForCourse(courseId: number): number[] {
   return rows.map((row) => row.id);
 }
 
-function getOpenRefundRequest(purchaseId: number) {
+function getRefundsForPurchase(purchaseId: number) {
   return db
-    .select()
+    .select({ status: refunds.status })
     .from(refunds)
-    .where(
-      and(
-        eq(refunds.purchaseId, purchaseId),
-        eq(refunds.status, RefundStatus.Open)
-      )
-    )
-    .get();
+    .where(eq(refunds.purchaseId, purchaseId))
+    .all();
 }
 
 // The fourteen-day window is counted in whole days, not hours — someone who
@@ -140,8 +136,14 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You have not bought this course.", { status: 403 });
   }
 
-  if (getOpenRefundRequest(purchase.id)) {
-    throw data("You already have an open refund request on this purchase.", {
+  const blocker = refundBlocker(getRefundsForPurchase(purchase.id));
+
+  if (blocker === "already-refunded") {
+    throw data("This purchase has already been refunded.", { status: 409 });
+  }
+
+  if (blocker === "already-requested") {
+    throw data("You already have a request open on this purchase.", {
       status: 409,
     });
   }
@@ -220,7 +222,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     learnerName: learner.name,
     learnerEmail: learner.email,
     courseTitle: course.title,
-    amount: purchase.amountPaid,
+    amount: refundableAmount(purchase),
   });
 
   console.log(

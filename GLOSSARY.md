@@ -34,3 +34,17 @@ _Avoid_: Completed, Paid out
 
 **Failed Refund**:
 A Refund where the money couldn't be sent. The Refund Request stays approved, because the decision hasn't changed.
+
+### Other terms
+
+**Enrollment**:
+A Learner's place on one Course, which lets them watch it. Their progress through the lessons belongs to the Enrollment it was made under.
+_Avoid_: Registration, Subscription
+
+**Revoked Enrollment**:
+An Enrollment whose access has been taken away because its Purchase was refunded. Its progress is kept as a record, but it is never restored: a Learner who buys the Course again gets a new Enrollment and starts fresh.
+_Avoid_: Ended, Cancelled, Deleted, Unenrolled
+
+**Admin**:
+A Cadence staff member who runs the platform, and the only person who approves or declines a Refund.
+_Avoid_: Team admin (a Learner who manages a team's seats is not an Admin)

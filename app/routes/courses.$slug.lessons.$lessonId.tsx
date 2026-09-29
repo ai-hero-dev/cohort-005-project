@@ -28,6 +28,7 @@ import {
   LessonProgressStatus,
   UserRole,
 } from "~/db/schema";
+import { isLiveProgress } from "~/lib/enrollments.server";
 import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -181,6 +182,7 @@ function getLessonProgress(userId: number, lessonId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.lessonId, lessonId)
       )
     )
@@ -210,6 +212,7 @@ function getLessonProgressForCourse(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         or(...courseLessons.map((l) => eq(lessonProgress.lessonId, l.id)))!
       )
     )
