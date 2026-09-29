@@ -9,6 +9,7 @@ import {
   lessonProgress,
   LessonProgressStatus,
 } from "~/db/schema";
+import { isLiveEnrollment, isLiveProgress } from "~/lib/enrollments.server";
 import { eq, and, or, sql } from "drizzle-orm";
 import { getCurrentUserId } from "~/lib/session";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
@@ -32,7 +33,7 @@ function getUserEnrolledCourses(userId: number) {
     })
     .from(enrollments)
     .innerJoin(courses, eq(enrollments.courseId, courses.id))
-    .where(eq(enrollments.userId, userId))
+    .where(and(eq(enrollments.userId, userId), isLiveEnrollment))
     .all();
 }
 
@@ -61,6 +62,7 @@ function getLessonProgress(userId: number, lessonId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.lessonId, lessonId)
       )
     )
@@ -99,6 +101,7 @@ function calculateProgress(
       .where(
         and(
           eq(lessonProgress.userId, userId),
+          isLiveProgress(),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
           or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
         )
@@ -120,6 +123,7 @@ function calculateProgress(
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )
@@ -139,6 +143,7 @@ function getCompletedLessonCount(userId: number, courseId: number) {
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )

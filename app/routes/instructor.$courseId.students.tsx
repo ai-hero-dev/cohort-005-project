@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import type { Route } from "./+types/instructor.$courseId.students";
 import { getCurrentUserId } from "~/lib/session";
 import { UserRole } from "~/db/schema";
+import { isLiveEnrollment, isLiveProgress } from "~/lib/enrollments.server";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
@@ -37,7 +38,7 @@ function getCourseEnrolledStudents(courseId: number) {
       completedAt: enrollments.completedAt,
     })
     .from(enrollments)
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isLiveEnrollment))
     .all();
 }
 
@@ -107,6 +108,7 @@ function calculateProgress(
       .where(
         and(
           eq(lessonProgress.userId, userId),
+          isLiveProgress(),
           eq(lessonProgress.status, LessonProgressStatus.Completed),
           or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
         )
@@ -128,6 +130,7 @@ function calculateProgress(
     .where(
       and(
         eq(lessonProgress.userId, userId),
+        isLiveProgress(),
         eq(lessonProgress.status, LessonProgressStatus.Completed),
         or(...lessonIds.map((id) => eq(lessonProgress.lessonId, id)))!
       )

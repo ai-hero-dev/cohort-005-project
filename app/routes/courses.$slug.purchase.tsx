@@ -19,6 +19,7 @@ import {
   CourseStatus,
   TeamMemberRole,
 } from "~/db/schema";
+import { findLiveEnrollment, isLiveEnrollment } from "~/lib/enrollments.server";
 import { eq, and, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { Card, CardContent } from "~/components/ui/card";
@@ -119,13 +120,7 @@ function getLessonCountForCourse(courseId: number) {
 }
 
 function findEnrollment(userId: number, courseId: number) {
-  return db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
+  return findLiveEnrollment(userId, courseId);
 }
 
 function isUserEnrolled(userId: number, courseId: number) {
@@ -136,7 +131,7 @@ function getEnrollmentCountForCourse(courseId: number) {
   const result = db
     .select({ count: sql<number>`count(*)` })
     .from(enrollments)
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isLiveEnrollment))
     .get();
 
   return result?.count ?? 0;

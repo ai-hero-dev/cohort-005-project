@@ -14,8 +14,9 @@ import {
   enrollments,
   users,
 } from "~/db/schema";
+import { isLiveEnrollment } from "~/lib/enrollments.server";
 import { db } from "~/db";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, or, sql, and } from "drizzle-orm";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -67,7 +68,7 @@ function getEnrollmentCountForCourse(courseId: number) {
   const result = db
     .select({ count: sql<number>`count(*)` })
     .from(enrollments)
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isLiveEnrollment))
     .get();
 
   return result?.count ?? 0;

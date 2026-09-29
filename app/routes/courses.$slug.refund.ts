@@ -16,7 +16,7 @@ import {
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
-import { getDiscountForCountry } from "~/lib/ppp";
+import { refundBlocker, refundableAmount } from "~/lib/refunds";
 import { formatPrice } from "~/lib/utils";
 
 const REFUND_WINDOW_DAYS = 14;
@@ -58,17 +58,12 @@ function getLessonIdsForCourse(courseId: number): number[] {
   return rows.map((row) => row.id);
 }
 
-function getOpenRefund(purchaseId: number) {
+function getRefundsForPurchase(purchaseId: number) {
   return db
-    .select()
+    .select({ status: refunds.status })
     .from(refunds)
-    .where(
-      and(
-        eq(refunds.purchaseId, purchaseId),
-        eq(refunds.status, RefundStatus.Requested)
-      )
-    )
-    .get();
+    .where(eq(refunds.purchaseId, purchaseId))
+    .all();
 }
 
 // The fourteen-day window is counted in whole days, not hours — someone who
@@ -141,7 +136,13 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You have not bought this course.", { status: 403 });
   }
 
-  if (getOpenRefund(purchase.id)) {
+  const blocker = refundBlocker(getRefundsForPurchase(purchase.id));
+
+  if (blocker === "already-refunded") {
+    throw data("This purchase has already been refunded.", { status: 409 });
+  }
+
+  if (blocker === "already-requested") {
     throw data("You already have a request open on this purchase.", {
       status: 409,
     });
@@ -200,10 +201,6 @@ export async function action({ params, request }: Route.ActionArgs) {
     });
   }
 
-  // A purchase made at a purchasing-power price is given back at that price,
-  // not at the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const refundableAmount = pppDiscount > 0 ? purchase.amountPaid : course.price;
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, refundActionSchema);
@@ -226,7 +223,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     learnerName: learner.name,
     learnerEmail: learner.email,
     courseTitle: course.title,
-    amount: refundableAmount,
+    amount: refundableAmount(purchase),
   });
 
   console.log(
