@@ -78,6 +78,13 @@
       "when": 1790200000000,
       "tag": "0010_cuddly_red_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790454089328,
+      "tag": "0011_eager_maddog",
+      "breakpoints": true
     }
   ]
 }

@@ -136,15 +136,18 @@ function getLessonCountForCourse(courseId: number) {
   return count?.count ?? 0;
 }
 
-function isUserEnrolled(userId: number, courseId: number) {
-  const enrollment = db
+function findEnrollment(userId: number, courseId: number) {
+  return db
     .select()
     .from(enrollments)
     .where(
       and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
     )
     .get();
-  return !!enrollment;
+}
+
+function isUserEnrolled(userId: number, courseId: number) {
+  return !!findEnrollment(userId, courseId);
 }
 
 function getCourseLessonIds(courseId: number): number[] {
@@ -331,7 +334,12 @@ function getCourseRatingSummary(courseId: number): CourseRatingSummary {
   };
 }
 
-function rateCourse(userId: number, courseId: number, rating: number) {
+function rateCourse(
+  enrollmentId: number,
+  userId: number,
+  courseId: number,
+  rating: number
+) {
   if (!Number.isInteger(rating) || rating < MIN_RATING || rating > MAX_RATING) {
     throw new Error(
       `Rating must be a whole number between ${MIN_RATING} and ${MAX_RATING}`
@@ -361,7 +369,7 @@ function rateCourse(userId: number, courseId: number, rating: number) {
 
   return db
     .insert(courseRatings)
-    .values({ userId, courseId, rating })
+    .values({ userId, courseId, enrollmentId, rating })
     .returning()
     .get();
 }
@@ -585,7 +593,8 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("Course not found", { status: 404 });
   }
 
-  if (!isUserEnrolled(currentUserId, course.id)) {
+  const enrollment = findEnrollment(currentUserId, course.id);
+  if (!enrollment) {
     throw data("You must be enrolled in this course to rate it.", {
       status: 403,
     });
@@ -598,7 +607,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { ok: false as const, error: "Please choose a rating from 1 to 5." };
   }
 
-  rateCourse(currentUserId, course.id, parsed.data.rating);
+  rateCourse(enrollment.id, currentUserId, course.id, parsed.data.rating);
 
   return { ok: true as const, error: null };
 }
