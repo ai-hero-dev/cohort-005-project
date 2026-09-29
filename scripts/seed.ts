@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { eq, gte, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -1808,6 +1808,37 @@ This course is still in draft while the cluster examples are rewritten against t
 
   console.log(`Created ${countRows(schema.enrollments)} enrollments.`);
 
+  // Progress and ratings belong to an Enrollment. These look it up for the
+  // hand-written history below, which only ever touches courses the student is
+  // enrolled in.
+  function enrollmentIdFor(userId: number, courseId: number) {
+    const enrollment = db
+      .select({ id: schema.enrollments.id })
+      .from(schema.enrollments)
+      .where(
+        and(
+          eq(schema.enrollments.userId, userId),
+          eq(schema.enrollments.courseId, courseId)
+        )
+      )
+      .get();
+    if (!enrollment) {
+      throw new Error(`User ${userId} is not enrolled in course ${courseId}`);
+    }
+    return enrollment.id;
+  }
+
+  function enrollmentIdForLesson(userId: number, lessonId: number) {
+    const lesson = db
+      .select({ courseId: schema.modules.courseId })
+      .from(schema.lessons)
+      .innerJoin(schema.modules, eq(schema.lessons.moduleId, schema.modules.id))
+      .where(eq(schema.lessons.id, lessonId))
+      .get();
+    if (!lesson) throw new Error(`Lesson ${lessonId} not found`);
+    return enrollmentIdFor(userId, lesson.courseId);
+  }
+
   // ─── Course Ratings ───
   // Star ratings from enrolled students only. Not everyone rates.
   // Course 1 averages 4.3 (4 ratings), course 2 averages 4.5 (2 ratings).
@@ -1817,6 +1848,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[0].id,
         courseId: course1.id,
+        enrollmentId: enrollmentIdFor(students[0].id, course1.id),
         rating: 5,
         createdAt: daysAgo(20),
         updatedAt: daysAgo(20),
@@ -1824,6 +1856,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[1].id,
         courseId: course1.id,
+        enrollmentId: enrollmentIdFor(students[1].id, course1.id),
         rating: 5,
         createdAt: daysAgo(9),
         updatedAt: daysAgo(9),
@@ -1831,6 +1864,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[2].id,
         courseId: course1.id,
+        enrollmentId: enrollmentIdFor(students[2].id, course1.id),
         rating: 4,
         createdAt: daysAgo(18),
         updatedAt: daysAgo(18),
@@ -1838,6 +1872,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[4].id,
         courseId: course1.id,
+        enrollmentId: enrollmentIdFor(students[4].id, course1.id),
         rating: 3,
         createdAt: daysAgo(5),
         updatedAt: daysAgo(5),
@@ -1845,6 +1880,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[0].id,
         courseId: course2.id,
+        enrollmentId: enrollmentIdFor(students[0].id, course2.id),
         rating: 4,
         createdAt: daysAgo(12),
         updatedAt: daysAgo(12),
@@ -1852,6 +1888,7 @@ This course is still in draft while the cluster examples are rewritten against t
       {
         userId: students[3].id,
         courseId: course2.id,
+        enrollmentId: enrollmentIdFor(students[3].id, course2.id),
         rating: 5,
         createdAt: daysAgo(8),
         updatedAt: daysAgo(8),
@@ -2006,6 +2043,7 @@ This course is still in draft while the cluster examples are rewritten against t
       .values({
         userId,
         lessonId,
+        enrollmentId: enrollmentIdForLesson(userId, lessonId),
         status: LessonProgressStatus.Completed,
         completedAt: daysAgo(daysAgoCompleted),
       })
@@ -2017,6 +2055,7 @@ This course is still in draft while the cluster examples are rewritten against t
       .values({
         userId,
         lessonId,
+        enrollmentId: enrollmentIdForLesson(userId, lessonId),
         status: LessonProgressStatus.InProgress,
       })
       .run();
@@ -2471,17 +2510,20 @@ This course is still in draft while the cluster examples are rewritten against t
       .run();
     generatedPurchases++;
 
-    db.insert(schema.enrollments)
+    const enrollment = db
+      .insert(schema.enrollments)
       .values({
         userId: buyer.id,
         courseId: target.course.id,
         enrolledAt: daysAgo(purchasedDaysAgo),
       })
-      .run();
+      .returning({ id: schema.enrollments.id })
+      .get();
     generatedEnrollments++;
 
     generatedProgressRows += generateProgress(
       buyer.id,
+      enrollment.id,
       target,
       purchasedDaysAgo
     );
@@ -2520,6 +2562,7 @@ This course is still in draft while the cluster examples are rewritten against t
   // written.
   function generateProgress(
     userId: number,
+    enrollmentId: number,
     target: SellableCourse,
     startedDaysAgo: number
   ): number {
@@ -2556,6 +2599,7 @@ This course is still in draft while the cluster examples are rewritten against t
         .values({
           userId,
           lessonId: lessonIds[li],
+          enrollmentId,
           status: LessonProgressStatus.Completed,
           completedAt: daysAgo(completedDaysAgo),
         })
@@ -2583,6 +2627,7 @@ This course is still in draft while the cluster examples are rewritten against t
         .values({
           userId,
           lessonId: nextLessonId,
+          enrollmentId,
           status: LessonProgressStatus.InProgress,
         })
         .run();
@@ -2740,24 +2785,28 @@ This course is still in draft while the cluster examples are rewritten against t
     })
     .returning()
     .all();
-  db.insert(schema.enrollments)
+  const [liamEnrollment] = db
+    .insert(schema.enrollments)
     .values({
       userId: liam.id,
       courseId: course1.id,
       enrolledAt: daysAgo(9),
     })
-    .run();
+    .returning()
+    .all();
   db.insert(schema.lessonProgress)
     .values([
       ...course1LessonIds.slice(0, 3).map((lessonId, i) => ({
         userId: liam.id,
         lessonId,
+        enrollmentId: liamEnrollment.id,
         status: LessonProgressStatus.Completed,
         completedAt: daysAgo(8 - i),
       })),
       {
         userId: liam.id,
         lessonId: course1LessonIds[3],
+        enrollmentId: liamEnrollment.id,
         status: LessonProgressStatus.InProgress,
         completedAt: null,
       },
@@ -2767,6 +2816,7 @@ This course is still in draft while the cluster examples are rewritten against t
     .values({
       userId: liam.id,
       courseId: course1.id,
+      enrollmentId: liamEnrollment.id,
       rating: 4,
       createdAt: daysAgo(6),
       updatedAt: daysAgo(6),

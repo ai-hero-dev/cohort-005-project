@@ -146,6 +146,10 @@ export const lessonProgress = sqliteTable(
     lessonId: integer("lesson_id")
       .notNull()
       .references(() => lessons.id),
+    // The Enrollment this progress was made under.
+    enrollmentId: integer("enrollment_id")
+      .notNull()
+      .references(() => enrollments.id),
     status: text("status").notNull().$type<LessonProgressStatus>(),
     completedAt: text("completed_at"),
   },
@@ -303,6 +307,10 @@ export const courseRatings = sqliteTable(
     courseId: integer("course_id")
       .notNull()
       .references(() => courses.id),
+    // The Enrollment this rating was given under.
+    enrollmentId: integer("enrollment_id")
+      .notNull()
+      .references(() => enrollments.id),
     // Whole stars, 1–5. Enforced on write.
     rating: integer("rating").notNull(),
     createdAt: text("created_at")

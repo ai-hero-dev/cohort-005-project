@@ -41,6 +41,7 @@ import {
   Clock,
   Github,
   HelpCircle,
+  Lock,
   MapPin,
   PlayCircle,
   ShieldAlert,
@@ -215,7 +216,11 @@ function getLessonProgressForCourse(userId: number, courseId: number) {
     .all();
 }
 
-function markLessonComplete(userId: number, lessonId: number) {
+function markLessonComplete(
+  enrollmentId: number,
+  userId: number,
+  lessonId: number
+) {
   const existing = getLessonProgress(userId, lessonId);
 
   if (existing) {
@@ -235,6 +240,7 @@ function markLessonComplete(userId: number, lessonId: number) {
     .values({
       userId,
       lessonId,
+      enrollmentId,
       status: LessonProgressStatus.Completed,
       completedAt: new Date().toISOString(),
     })
@@ -242,7 +248,11 @@ function markLessonComplete(userId: number, lessonId: number) {
     .get();
 }
 
-function markLessonInProgress(userId: number, lessonId: number) {
+function markLessonInProgress(
+  enrollmentId: number,
+  userId: number,
+  lessonId: number
+) {
   const existing = getLessonProgress(userId, lessonId);
 
   if (existing) {
@@ -262,6 +272,7 @@ function markLessonInProgress(userId: number, lessonId: number) {
     .values({
       userId,
       lessonId,
+      enrollmentId,
       status: LessonProgressStatus.InProgress,
     })
     .returning()
@@ -730,9 +741,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let lessonProgressMap: Record<number, string> = {};
 
   if (currentUserId) {
-    if (enrolled) {
+    if (access.enrollmentId !== null) {
       // Mark lesson as in-progress when viewed
-      markLessonInProgress(currentUserId, lessonId);
+      markLessonInProgress(access.enrollmentId, currentUserId, lessonId);
       const progress = getLessonProgress(currentUserId, lessonId);
       lessonStatus = progress?.status ?? null;
 
@@ -772,10 +783,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     ? await renderThread(getLessonThread(lessonId))
     : [];
 
-  // Render lesson content from Markdown to HTML server-side
-  const contentHtml = lesson.content
-    ? await renderMarkdown(lesson.content)
-    : null;
+  // Render lesson content from Markdown to HTML server-side. The body and the
+  // video are the paid part: without access, the page is a preview and neither
+  // leaves the server.
+  const contentHtml =
+    canViewContent && lesson.content
+      ? await renderMarkdown(lesson.content)
+      : null;
 
   // Build prev/next navigation
   const allLessons = flattenCourseLessons(courseWithDetails);
@@ -847,7 +861,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       id: mod.id,
       title: mod.title,
     },
-    lesson,
+    lesson: canViewContent
+      ? lesson
+      : { ...lesson, content: null, videoUrl: null },
     contentHtml,
     lessonStatus,
     enrolled,
@@ -945,7 +961,11 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   if (intent === "mark-complete") {
-    markLessonComplete(currentUserId, lessonId);
+    const access = await requireContentAccess(request, course.id);
+    if (access.enrollmentId === null) {
+      throw data("You must be enrolled in this course.", { status: 403 });
+    }
+    markLessonComplete(access.enrollmentId, currentUserId, lessonId);
     return { success: true };
   }
 
@@ -1152,6 +1172,24 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
             )}
           </div>
 
+          {/* Paywall — a preview for anyone who can't read the lesson */}
+          {!canViewContent && (
+            <Card className="mb-8">
+              <CardContent className="py-12 text-center">
+                <Lock className="mx-auto mb-4 size-12 text-muted-foreground" />
+                <h2 className="mb-2 text-xl font-semibold">
+                  This lesson is part of {course.title}
+                </h2>
+                <p className="mb-6 text-muted-foreground">
+                  Enroll in the course to watch the video and read the lesson.
+                </p>
+                <Link to={`/courses/${course.slug}`}>
+                  <Button>View Course</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+
           {/* YouTube Video */}
           {lesson.videoUrl && (
             <YouTubePlayer
@@ -1175,7 +1213,7 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
             />
           )}
 
-          {!contentHtml && !lesson.videoUrl && (
+          {canViewContent && !contentHtml && !lesson.videoUrl && (
             <Card className="mb-8">
               <CardContent className="py-12 text-center text-muted-foreground">
                 No content has been added to this lesson yet.
