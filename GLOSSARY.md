@@ -11,10 +11,22 @@ _Avoid_: Student, customer, user
 **Course**:
 A set of lessons sold as one item.
 
+**Enrollment**:
+A Learner's place on one Course, which lets them watch it. Their progress through the lessons belongs to the Enrollment it was made under.
+_Avoid_: Registration, Subscription
+
+**Revoked Enrollment**:
+An Enrollment whose access has been taken away because its Purchase was refunded. Its progress is kept as a record, but it is never restored: a Learner who buys the Course again gets a new Enrollment and starts fresh.
+_Avoid_: Ended, Cancelled, Deleted, Unenrolled
+
 **Purchase**:
 A Learner's payment for one Course, recorded with the amount they actually paid.
 _Avoid_: Order, transaction
 
 **Refund**:
-A Learner's request to get their money back for a Purchase, together with its outcome. A Refund is requested, then approved or declined.
-_Avoid_: Cancellation, Reversal, Chargeback, Refund Request
+A Learner's request to get their money back for a Purchase, together with its outcome. A Refund is requested, then approved or declined by an Admin. The outcome is final; an approved Refund gives back exactly what the Learner paid, never part of it.
+_Avoid_: Cancellation, Reversal, Chargeback, Refund Request, Pending
+
+**Admin**:
+A Cadence staff member who runs the platform, and the only person who approves or declines a Refund.
+_Avoid_: Team admin (a Learner who manages a team's seats is not an Admin)

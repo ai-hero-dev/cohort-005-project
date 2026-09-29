@@ -7,9 +7,9 @@ import {
   users,
   modules,
   lessons,
-  enrollments,
 } from "~/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { findLiveEnrollment } from "~/lib/enrollments.server";
+import { eq, or } from "drizzle-orm";
 import { getCurrentUserId } from "~/lib/session";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -78,14 +78,7 @@ function getCourseWithDetails(id: number) {
 }
 
 function isUserEnrolled(userId: number, courseId: number) {
-  const enrollment = db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
-  return !!enrollment;
+  return !!findLiveEnrollment(userId, courseId);
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -157,11 +150,7 @@ export default function Welcome({ loaderData }: Route.ComponentProps) {
                 rel="noopener noreferrer"
                 className="block"
               >
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full max-w-sm"
-                >
+                <Button variant="outline" size="lg" className="w-full max-w-sm">
                   <MessageCircle className="mr-2 size-5" />
                   Join the Discord Community
                 </Button>

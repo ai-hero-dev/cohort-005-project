@@ -1,0 +1,1 @@
+ALTER TABLE `enrollments` ADD `revoked_at` text;

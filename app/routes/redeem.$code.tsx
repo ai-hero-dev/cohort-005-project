@@ -12,7 +12,8 @@ import { Ticket, AlertCircle, CheckCircle2, Globe } from "lucide-react";
 import { data } from "react-router";
 import { db } from "~/db";
 import { purchases, coupons, courses, enrollments } from "~/db/schema";
-import { eq, and } from "drizzle-orm";
+import { findLiveEnrollment } from "~/lib/enrollments.server";
+import { eq } from "drizzle-orm";
 
 function getCourseById(id: number) {
   return db.select().from(courses).where(eq(courses.id, id)).get();
@@ -23,15 +24,7 @@ function getCouponByCode(code: string) {
 }
 
 function isUserEnrolled(userId: number, courseId: number) {
-  const existing = db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
-
-  return !!existing;
+  return !!findLiveEnrollment(userId, courseId);
 }
 
 type RedeemResult =
@@ -52,16 +45,7 @@ function redeemCoupon(
     return { ok: false, error: "Coupon has already been redeemed" };
   }
 
-  const existingEnrollment = db
-    .select()
-    .from(enrollments)
-    .where(
-      and(
-        eq(enrollments.userId, userId),
-        eq(enrollments.courseId, coupon.courseId)
-      )
-    )
-    .get();
+  const existingEnrollment = findLiveEnrollment(userId, coupon.courseId);
 
   if (existingEnrollment) {
     return { ok: false, error: "You are already enrolled in this course" };
