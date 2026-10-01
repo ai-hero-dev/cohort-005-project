@@ -67,3 +67,21 @@ _Avoid_: Completed, Paid out
 
 **Failed Refund**:
 A Refund where the money couldn't be sent. The Refund Request stays approved, because the decision hasn't changed.
+
+### Other terms
+
+**Watch Limit**:
+A Refund is only offered on a course with under two hours watched. Past that, the Learner has had the course, and the refund form turns them away.
+_Avoid_: Watch cap, Viewing threshold
+
+**Refunds table**:
+`refunds` — one row per Refund. Columns: `id`, `purchase_id`, `status` (`open`, `approved`, `declined`), `reason`, `amount_refunded`, `requested_at`, `resolved_at`, `resolved_by_user_id`, `decision_note`.
+
+**refunded_at**:
+Nullable text column on `coupons`. An ISO timestamp, set on every unclaimed coupon when its team purchase is refunded. `getSeatAvailability` returns `"refunded"` for it.
+
+**resolved_by_user_id**:
+Integer column on `refunds`, referencing `users.id`. Null until an Admin approves or declines the Refund.
+
+**RefundRequestCard**:
+The component that draws one Refund Request on `/admin/refunds`, with its Approve and Decline buttons.
