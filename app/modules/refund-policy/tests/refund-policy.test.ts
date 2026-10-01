@@ -73,7 +73,7 @@ describe("decideRefund", () => {
     it("refuses at exactly half", () => {
       expect(
         decide({ lessonCount: 10, completedLessonCount: 5 })
-      ).toMatchObject({ refusedBy: "too-much-completed" });
+      ).toMatchObject({ eligible: false, refusedBy: "too-much-completed" });
     });
 
     it("refuses past half", () => {
