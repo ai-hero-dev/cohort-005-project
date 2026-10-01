@@ -30,3 +30,19 @@ _Avoid_: Cancellation, Reversal, Chargeback, Refund Request, Pending
 **Admin**:
 A Cadence staff member who runs the platform, and the only person who approves or declines a Refund.
 _Avoid_: Team admin (a Learner who manages a team's seats is not an Admin)
+
+**Watch Limit**:
+A Refund is only offered on a course with under two hours watched. Past that, the Learner has had the course, and the refund form turns them away.
+_Avoid_: Watch cap, Viewing threshold
+
+**Refunds table**:
+`refunds` — one row per Refund. Columns: `id`, `purchase_id`, `status` (`requested`, `approved`, `declined`), `reason`, `amount_refunded`, `requested_at`, `resolved_at`, `resolved_by_user_id`.
+
+**revoked_at**:
+Nullable text column on `enrollments`. An ISO timestamp, set when an approved Refund takes the course away. Access checks filter on `isNull(enrollments.revokedAt)`.
+
+**resolved_by_user_id**:
+Integer column on `refunds`, referencing `users.id`. Null until an Admin approves or declines the Refund.
+
+**RefundRow**:
+The component that draws one requested Refund on `/admin/refunds`, with its Approve and Decline buttons.
