@@ -6,6 +6,10 @@ Do these checks in this order before you report a change to `app/` as complete:
 2. `npm run test`
 3. `npm run lint:boundaries`
 
+`.husky/pre-commit` runs all three again, and then `npm run check:file-size`,
+which blocks a staged file over the token budget. See
+`docs/agents/pre-commit-checks.md`.
+
 ## When something breaks
 
 | Symptom                                         | Cause                                                                                                  |
