@@ -25,6 +25,16 @@ The index is not a key. When the list is reordered, every row below the change
 is rebuilt, and anything the row was holding — focus, a half-typed input — is
 lost. Use the row's id.
 
+## A component does not reach the database
+
+Not through `~/db`, and not through a helper that does it for you. A component
+is bundled for the browser, and the browser cannot open `data.db` — the import
+alone takes the whole client bundle down, React never hydrates, and the page
+renders and then does nothing. `typecheck` and `test` both stay green.
+
+The data comes from the loader of the route that renders the component. The
+component takes it as a prop.
+
 ## No side effect in the render path
 
 Render works out what the output is. It does not write, fetch, or reach for
