@@ -4,11 +4,11 @@
 under it.** This file is the root, so the six rules below apply everywhere.
 A rule that is only true in one area lives in that area's file:
 
-| File                             | Applies to                                |
-| -------------------------------- | ----------------------------------------- |
-| `app/db/CODING_STANDARDS.md`     | The schema, migrations and every query     |
-| `app/routes/CODING_STANDARDS.md` | Loaders, actions and anything they reach   |
-| `app/components/CODING_STANDARDS.md` | React components and what they render  |
+| File                                 | Applies to                               |
+| ------------------------------------ | ---------------------------------------- |
+| `app/db/CODING_STANDARDS.md`         | The schema, migrations and every query   |
+| `app/routes/CODING_STANDARDS.md`     | Loaders, actions and anything they reach |
+| `app/components/CODING_STANDARDS.md` | React components and what they render    |
 
 Read the root file and the one for the directory you are editing. Nothing
 else.
