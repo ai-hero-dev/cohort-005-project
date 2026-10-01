@@ -1,8 +1,5 @@
 # Coding standards
 
-These rules carry over from the AI Coding Crash Course. They are short on
-purpose. Add a rule when a review or a retro shows you need one — not before.
-
 ## Fail with a thrown response, not a return value
 
 A loader or an action that cannot continue throws. It does not return an
