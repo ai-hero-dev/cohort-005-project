@@ -20,7 +20,7 @@ import { refundBlocker, refundableAmount } from "~/lib/refunds";
 import { formatPrice } from "~/lib/utils";
 
 const REFUND_WINDOW_DAYS = 14;
-const MAX_WATCHED_HOURS = 2;
+const WATCHED_LIMIT_SECONDS = 3600;
 
 const refundParamsSchema = z.object({
   slug: z.string().min(1),
@@ -195,7 +195,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     );
   }
 
-  if (watchedSeconds >= MAX_WATCHED_HOURS * 60 * 60) {
+  if (watchedSeconds >= WATCHED_LIMIT_SECONDS) {
     throw data("You have watched too much of this course to get a refund.", {
       status: 403,
     });
