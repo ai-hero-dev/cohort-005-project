@@ -2715,7 +2715,7 @@ This course is still in draft while the cluster examples are rewritten against t
   );
 
   // Four seats on Design Systems, bought during launch week, none redeemed yet.
-  createTeamPurchase(
+  const novakLicence = createTeamPurchase(
     "marta.novak@student.dev",
     course3,
     4,
@@ -2724,8 +2724,8 @@ This course is still in draft while the cluster examples are rewritten against t
     []
   );
 
-  // ─── Liam's Refund ───
-  // One learner with a Refund waiting on an admin. The dates count back from
+  // ─── Liam's Refund Request ───
+  // One learner with an Open Refund Request. The dates count back from
   // today, so the fourteen-day refund window is still open whenever you seed.
 
   const liam = studentByEmail("liam@example.com");
@@ -2775,13 +2775,28 @@ This course is still in draft while the cluster examples are rewritten against t
   db.insert(schema.refunds)
     .values({
       purchaseId: liamPurchase.id,
-      status: RefundStatus.Requested,
+      status: RefundStatus.Open,
       reason: "Bought the wrong one, I meant the advanced course.",
       requestedAt: daysAgo(4),
     })
     .run();
 
-  console.log("Created Liam's Refund.");
+  console.log("Created Liam's Refund Request.");
+
+  // ─── Marta's Refund Request ───
+  // A Team Licence with no Claimed Seats, so a Platform Admin can approve it.
+  // Its Seats are on hold while the request is open.
+
+  db.insert(schema.refunds)
+    .values({
+      purchaseId: novakLicence.purchase.id,
+      status: RefundStatus.Open,
+      reason: "Our design team was reorganised and nobody needs these seats now.",
+      requestedAt: daysAgo(1),
+    })
+    .run();
+
+  console.log("Created Marta's Refund Request on her Team Licence.");
 
   // ─── Flush watch events ───
   // Batched: the heartbeat makes these by far the largest table, and one
