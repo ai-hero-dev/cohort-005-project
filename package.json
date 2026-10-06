@@ -16,12 +16,16 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx scripts/seed.ts",
+    "knock:sync-users": "tsx scripts/sync-users-to-knock.ts",
+    "knock:push-workflows": "tsx scripts/push-knock-workflows.ts",
     "seed-wayfinder-issues": "bash scripts/seed-wayfinder-issues.sh",
     "db:migrate": "drizzle-kit migrate",
     "loc": "git ls-files | grep -vE '(lock|.db|_snapshot.json)' | xargs wc -l"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
+    "@knocklabs/client": "^0.22.2",
+    "@knocklabs/node": "^1.36.0",
     "@monaco-editor/react": "^4.7.0",
     "@react-router/node": "8.3.0",
     "@react-router/serve": "8.3.0",

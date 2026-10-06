@@ -15,8 +15,14 @@ import {
   videoWatchEvents,
   LessonProgressStatus,
   RefundStatus,
+  UserRole,
 } from "~/db/schema";
 import { formatPrice } from "~/lib/utils";
+import {
+  sendSafely,
+  toNotificationPerson,
+  type Notifications,
+} from "~/lib/notifications.server";
 import {
   REFUND_COMPLETION_LIMIT,
   REFUND_WATCH_LIMIT_SECONDS,
@@ -354,13 +360,14 @@ export type RaiseResult =
   | { ok: true; refundRequestId: number; kind: PurchaseKind; email: Email }
   | Failure;
 
-export function raiseRefundRequest(
+export async function raiseRefundRequest(
   db: Db,
   purchaseId: number,
   buyerId: number,
   reason: string,
-  now: Date
-): RaiseResult {
+  now: Date,
+  notifications: Notifications
+): Promise<RaiseResult> {
   const check = checkRefundRequest(db, purchaseId, buyerId, now);
   if (!check.ok) return check;
 
@@ -386,6 +393,45 @@ export function raiseRefundRequest(
     })
     .returning()
     .get();
+
+  await sendSafely(
+    notifications,
+    {
+      kind: "refund-requested",
+      recipient: toNotificationPerson(buyer),
+      data: {
+        refundRequestId: refundRequest.id,
+        courseTitle: course.title,
+        amount: formatPrice(purchase.amountPaid),
+      },
+    },
+    `refund-requested:${refundRequest.id}`
+  );
+
+  const platformAdmins = db
+    .select()
+    .from(users)
+    .where(eq(users.role, UserRole.Admin))
+    .all();
+  for (const platformAdmin of platformAdmins) {
+    await sendSafely(
+      notifications,
+      {
+        kind: "refund-request-open",
+        recipient: toNotificationPerson(platformAdmin),
+        actor: toNotificationPerson(buyer),
+        data: {
+          refundRequestId: refundRequest.id,
+          buyerName: buyer.name,
+          courseTitle: course.title,
+          amount: formatPrice(purchase.amountPaid),
+          reason,
+          url: "/admin/refunds",
+        },
+      },
+      `refund-request-open:${refundRequest.id}`
+    );
+  }
 
   return {
     ok: true,
@@ -611,14 +657,15 @@ function findOpenRefundRequest(
  * - A Team Licence: its Unclaimed Seats can never be claimed. Refused if any
  *   Seat has been claimed (docs/adr/0003).
  */
-export function approveRefundRequest(
+export async function approveRefundRequest(
   db: Db,
   refundRequestId: number,
   platformAdminId: number,
   note: string | null,
-  now: Date
-): DecisionResult {
-  return db.transaction((tx): DecisionResult => {
+  now: Date,
+  notifications: Notifications
+): Promise<DecisionResult> {
+  const result = db.transaction((tx): DecisionResult => {
     const found = findOpenRefundRequest(tx, refundRequestId);
     if (!found.ok) return found;
 
@@ -682,6 +729,9 @@ export function approveRefundRequest(
       email: buildDecisionEmail(tx, purchase, RefundStatus.Approved, note),
     };
   });
+
+  if (result.ok) await notifyDecision(db, refundRequestId, notifications);
+  return result;
 }
 
 /**
@@ -689,13 +739,14 @@ export function approveRefundRequest(
  * the buyer may raise a new Refund Request. The note is required: it is how
  * the buyer learns whether another request is worth raising.
  */
-export function declineRefundRequest(
+export async function declineRefundRequest(
   db: Db,
   refundRequestId: number,
   platformAdminId: number,
   note: string,
-  now: Date
-): DecisionResult {
+  now: Date,
+  notifications: Notifications
+): Promise<DecisionResult> {
   const trimmedNote = note.trim();
 
   if (trimmedNote.length === 0) {
@@ -706,7 +757,7 @@ export function declineRefundRequest(
     };
   }
 
-  return db.transaction((tx): DecisionResult => {
+  const result = db.transaction((tx): DecisionResult => {
     const found = findOpenRefundRequest(tx, refundRequestId);
     if (!found.ok) return found;
 
@@ -730,6 +781,9 @@ export function declineRefundRequest(
       ),
     };
   });
+
+  if (result.ok) await notifyDecision(db, refundRequestId, notifications);
+  return result;
 }
 
 /** The email the buyer gets once their Refund Request is decided. */
@@ -778,4 +832,75 @@ function buildDecisionEmail(
       "— The Cadence team",
     ].join("\n"),
   };
+}
+
+// ─── Notifications ───
+
+/**
+ * Tells the buyer how their Refund Request was decided. Reads the decision
+ * back after it has committed.
+ */
+async function notifyDecision(
+  db: Db,
+  refundRequestId: number,
+  notifications: Notifications
+) {
+  const refundRequest = db
+    .select()
+    .from(refunds)
+    .where(eq(refunds.id, refundRequestId))
+    .get();
+  if (!refundRequest || refundRequest.status === RefundStatus.Open) return;
+
+  const purchase = getPurchase(db, refundRequest.purchaseId);
+  if (!purchase) return;
+  const buyer = db.select().from(users).where(eq(users.id, purchase.userId)).get();
+  const course = db
+    .select()
+    .from(courses)
+    .where(eq(courses.id, purchase.courseId))
+    .get();
+  const decider = refundRequest.resolvedByUserId
+    ? db
+        .select()
+        .from(users)
+        .where(eq(users.id, refundRequest.resolvedByUserId))
+        .get()
+    : undefined;
+  if (!buyer || !course) return;
+
+  const purchaseKind = kindOf(getSeats(db, purchase.id));
+  const data = {
+    refundRequestId,
+    courseTitle: course.title,
+    purchaseKind,
+    amount: formatPrice(purchase.amountPaid),
+    url: purchaseKind === "team_licence" ? "/team" : "/settings",
+  };
+  const recipient = toNotificationPerson(buyer);
+  const actor = decider ? toNotificationPerson(decider) : undefined;
+
+  if (refundRequest.status === RefundStatus.Approved) {
+    await sendSafely(
+      notifications,
+      {
+        kind: "refund-approved",
+        recipient,
+        actor,
+        data: { ...data, decisionNote: refundRequest.decisionNote },
+      },
+      `refund-approved:${refundRequestId}`
+    );
+  } else {
+    await sendSafely(
+      notifications,
+      {
+        kind: "refund-declined",
+        recipient,
+        actor,
+        data: { ...data, decisionNote: refundRequest.decisionNote ?? "" },
+      },
+      `refund-declined:${refundRequestId}`
+    );
+  }
 }
