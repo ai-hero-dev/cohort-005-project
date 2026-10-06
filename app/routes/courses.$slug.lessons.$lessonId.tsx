@@ -6,10 +6,15 @@ import { getCurrentUserId } from "~/lib/session";
 import { getAccess, requireContentAccess } from "~/lib/access.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import {
+  createComment,
+  deleteComment,
+  editComment,
+} from "~/lib/comments.server";
+import { defaultNotifications } from "~/lib/notifications.server";
+import {
   CommentThread,
   type RenderedComment,
 } from "~/components/comment-thread";
-import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { db } from "~/db";
 import {
   categories,
@@ -327,19 +332,6 @@ function getCommentById(commentId: number) {
   return db.select().from(comments).where(eq(comments.id, commentId)).get();
 }
 
-function assertValidBody(body: string) {
-  const trimmed = body.trim();
-  if (trimmed.length < MIN_COMMENT_LENGTH) {
-    throw new Error("Comment cannot be empty");
-  }
-  if (trimmed.length > MAX_COMMENT_LENGTH) {
-    throw new Error(
-      `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`
-    );
-  }
-  return trimmed;
-}
-
 function getLessonThread(lessonId: number): ThreadComment[] {
   const course = getCourseForLesson(lessonId);
   if (!course) return [];
@@ -399,81 +391,6 @@ function getLessonThread(lessonId: number): ThreadComment[] {
 
   // A deleted question with no replies left has nothing worth showing.
   return topLevel.filter((c) => !c.deleted || c.replies.length > 0);
-}
-
-function createComment(
-  userId: number,
-  lessonId: number,
-  parentId: number | null,
-  body: string
-) {
-  const trimmed = assertValidBody(body);
-
-  const course = getCourseForLesson(lessonId);
-  if (!course) {
-    throw new Error("Lesson not found");
-  }
-
-  if (parentId !== null) {
-    const parent = getCommentById(parentId);
-    if (!parent) {
-      throw new Error("Parent comment not found");
-    }
-    if (parent.lessonId !== lessonId) {
-      throw new Error("Parent comment belongs to a different lesson");
-    }
-    if (parent.parentId !== null) {
-      throw new Error("Replies can only be one level deep");
-    }
-  }
-
-  return db
-    .insert(comments)
-    .values({ userId, lessonId, parentId, body: trimmed })
-    .returning()
-    .get();
-}
-
-function updateComment(commentId: number, userId: number, body: string) {
-  const trimmed = assertValidBody(body);
-
-  const existing = getCommentById(commentId);
-  if (!existing) {
-    throw new Error("Comment not found");
-  }
-  if (existing.deletedAt !== null) {
-    throw new Error("Comment has been deleted");
-  }
-  if (existing.userId !== userId) {
-    throw new Error("You can only edit your own comments");
-  }
-
-  return db
-    .update(comments)
-    .set({ body: trimmed, editedAt: new Date().toISOString() })
-    .where(eq(comments.id, commentId))
-    .returning()
-    .get();
-}
-
-function deleteComment(commentId: number, userId: number, isStaff: boolean) {
-  const existing = getCommentById(commentId);
-  if (!existing) {
-    throw new Error("Comment not found");
-  }
-  if (existing.userId !== userId && !isStaff) {
-    throw new Error("You can only delete your own comments");
-  }
-  if (existing.deletedAt !== null) {
-    return existing;
-  }
-
-  return db
-    .update(comments)
-    .set({ deletedAt: new Date().toISOString() })
-    .where(eq(comments.id, commentId))
-    .returning()
-    .get();
 }
 
 function getQuizByLessonId(lessonId: number) {
@@ -900,12 +817,16 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!parsed.success) {
           return { ok: false, error: "Enter a comment before posting." };
         }
-        createComment(
+        const created = await createComment(
+          db,
           currentUserId,
           lessonId,
           parsed.data.parentId ?? null,
-          parsed.data.body
+          parsed.data.body,
+          new Date(),
+          await defaultNotifications()
         );
+        if (!created.ok) return created;
         return { ok: true };
       }
 
@@ -920,7 +841,14 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!existing || existing.lessonId !== lessonId) {
           throw data("Comment not found", { status: 404 });
         }
-        updateComment(parsed.data.commentId, currentUserId, parsed.data.body);
+        const edited = editComment(
+          db,
+          parsed.data.commentId,
+          currentUserId,
+          parsed.data.body,
+          new Date()
+        );
+        if (!edited.ok) return edited;
         return { ok: true };
       }
 
@@ -932,7 +860,15 @@ export async function action({ params, request }: Route.ActionArgs) {
       if (!existing || existing.lessonId !== lessonId) {
         throw data("Comment not found", { status: 404 });
       }
-      deleteComment(parsed.data.commentId, currentUserId, access.isStaff);
+      const deleted = await deleteComment(
+        db,
+        parsed.data.commentId,
+        currentUserId,
+        access.isStaff,
+        new Date(),
+        await defaultNotifications()
+      );
+      if (!deleted.ok) return deleted;
       return { ok: true };
     } catch (error) {
       // Service validation failures are user-correctable; anything thrown as a
