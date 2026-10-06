@@ -258,7 +258,7 @@ describe("the refund offer on the course page", () => {
 });
 
 describe("approving a Refund Request", () => {
-  it("removes the buyer's place on the course but keeps their progress", () => {
+  it("removes the buyer's Enrollment but keeps their progress", () => {
     const purchase = buyForSelf(base.user.id);
     db.insert(schema.lessonProgress)
       .values({
@@ -293,10 +293,10 @@ describe("approving a Refund Request", () => {
     });
   });
 
-  it("keeps the buyer's place if they also hold a Claimed Seat for the course", () => {
+  it("keeps the buyer's Enrollment if they also hold a Claimed Seat for the course", () => {
     const priya = addLearner("Priya");
     const { seats } = buySeats(priya.id, 2);
-    // Liam claims a Seat first, so his place on the course came from it.
+    // Liam claims a Seat first, so his Enrollment came from it.
     claimSeat(seats[0].id, base.user.id);
     const purchase = db
       .insert(schema.purchases)
@@ -380,7 +380,7 @@ describe("declining a Refund Request", () => {
     });
   });
 
-  it("keeps the buyer's place and lets them raise a new Refund Request", () => {
+  it("keeps the buyer's Enrollment and lets them raise a new Refund Request", () => {
     const purchase = buyForSelf(base.user.id);
     const id = raise(purchase.id, base.user.id);
 
