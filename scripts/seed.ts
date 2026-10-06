@@ -14,10 +14,17 @@ import {
   QuestionType,
   TeamMemberRole,
 } from "../app/db/schema";
+import { existsSync } from "fs";
+import { defaultNotifications } from "../app/lib/notifications.server";
+import { syncAllUsers } from "../app/lib/notification-preferences.server";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsFolder = path.resolve(__dirname, "../drizzle");
+
+// Runs under tsx, not Vite, so load .env for the Knock keys ourselves.
+const envFile = path.resolve(__dirname, "../.env");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -2852,6 +2859,15 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(
     `  Teams: ${countRows(schema.teams)}, coupons: ${countRows(schema.coupons)} (${countRows(schema.coupons, isNotNull(schema.coupons.redeemedByUserId))} redeemed)`
   );
+
+  // ─── Sync users to Knock ───
+  // Name, email, avatar, and default preferences for anyone without a set.
+  if (process.env.KNOCK_SECRET_API_KEY) {
+    const synced = await syncAllUsers(db, await defaultNotifications());
+    console.log(`  Synced ${synced} users to Knock.`);
+  } else {
+    console.log("  Skipped Knock user sync: KNOCK_SECRET_API_KEY is not set.");
+  }
 }
 
 seed().catch(console.error);

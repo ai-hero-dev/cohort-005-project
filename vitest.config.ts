@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
-    exclude: [...configDefaults.exclude],
+    exclude: [...configDefaults.exclude, ".claude/**"],
   },
 });
