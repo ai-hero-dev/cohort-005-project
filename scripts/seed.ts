@@ -2724,8 +2724,8 @@ This course is still in draft while the cluster examples are rewritten against t
     []
   );
 
-  // ─── Liam's Refund ───
-  // One learner with a Refund waiting on an admin. The dates count back from
+  // ─── Liam's Refund Request ───
+  // One learner with an Open Refund Request. The dates count back from
   // today, so the fourteen-day refund window is still open whenever you seed.
 
   const liam = studentByEmail("liam@example.com");
@@ -2775,13 +2775,13 @@ This course is still in draft while the cluster examples are rewritten against t
   db.insert(schema.refunds)
     .values({
       purchaseId: liamPurchase.id,
-      status: RefundStatus.Requested,
+      status: RefundStatus.Open,
       reason: "Bought the wrong one, I meant the advanced course.",
       requestedAt: daysAgo(4),
     })
     .run();
 
-  console.log("Created Liam's Refund.");
+  console.log("Created Liam's Refund Request.");
 
   // ─── Flush watch events ───
   // Batched: the heartbeat makes these by far the largest table, and one
