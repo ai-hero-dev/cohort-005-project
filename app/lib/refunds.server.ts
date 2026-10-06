@@ -315,7 +315,7 @@ export type RefundOffer = {
 };
 
 /**
- * What the course page offers a learner who wants their money back: their
+ * What the course page offers a student who wants their money back: their
  * newest Individual Purchase of the course, if it can be refunded. Team
  * Licences are refunded from the team page instead.
  */
@@ -497,7 +497,7 @@ export function listRefundRequestsForReview(
       daysSincePurchase: Math.max(0, Math.floor(msSincePurchase / 86_400_000)),
       figures,
       ruleBreaks,
-      // A Claimed Seat belongs to another learner, so the only way out of
+      // A Claimed Seat belongs to another student, so the only way out of
       // that request is a decline. See docs/adr/0003.
       canApprove:
         row.status === RefundStatus.Open && !ruleBreaks.includes("seat_claimed"),
@@ -605,8 +605,8 @@ function findOpenRefundRequest(
 /**
  * Approves an Open Refund Request and ends what its Purchase granted.
  *
- * - An Individual Purchase: the buyer loses their place on the course, unless
- *   they also hold a Claimed Seat for it (docs/adr/0004). Their progress stays
+ * - An Individual Purchase: the buyer loses their Enrollment, unless
+ *   they also hold a Claimed Seat for the course (docs/adr/0004). Their progress stays
  *   (docs/adr/0001).
  * - A Team Licence: its Unclaimed Seats can never be claimed. Refused if any
  *   Seat has been claimed (docs/adr/0003).
