@@ -1662,7 +1662,7 @@ export default function InstructorAnalytics({
               <StatCard
                 label="Enrolled students"
                 value={audience.studentCount}
-                hint={`Learners with access, seats included.${
+                hint={`Students with access, seats included.${
                   audience.revenuePerStudentCents === null
                     ? ""
                     : ` ${formatMoney(
