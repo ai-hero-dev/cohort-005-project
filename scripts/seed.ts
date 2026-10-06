@@ -2715,7 +2715,7 @@ This course is still in draft while the cluster examples are rewritten against t
   );
 
   // Four seats on Design Systems, bought during launch week, none redeemed yet.
-  createTeamPurchase(
+  const novakLicence = createTeamPurchase(
     "marta.novak@student.dev",
     course3,
     4,
@@ -2782,6 +2782,21 @@ This course is still in draft while the cluster examples are rewritten against t
     .run();
 
   console.log("Created Liam's Refund Request.");
+
+  // ─── Marta's Refund Request ───
+  // A Team Licence with no Claimed Seats, so a Platform Admin can approve it.
+  // Its Seats are on hold while the request is open.
+
+  db.insert(schema.refunds)
+    .values({
+      purchaseId: novakLicence.purchase.id,
+      status: RefundStatus.Open,
+      reason: "Our design team was reorganised and nobody needs these seats now.",
+      requestedAt: daysAgo(1),
+    })
+    .run();
+
+  console.log("Created Marta's Refund Request on her Team Licence.");
 
   // ─── Flush watch events ───
   // Batched: the heartbeat makes these by far the largest table, and one
