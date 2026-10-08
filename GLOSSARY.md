@@ -85,3 +85,18 @@ Integer column on `refunds`, referencing `users.id`. Null until an Admin approve
 
 **RefundRequestCard**:
 The component that draws one Refund Request on `/admin/refunds`, with its Approve and Decline buttons.
+
+**Button**:
+A clickable element that fires an action when the user presses it. Built on `~/components/ui/button`.
+
+**Component**:
+A React function that returns JSX.
+
+**cwd**:
+The directory the dev server was started from. Paths in `scripts/` resolve from here.
+
+**Loader**:
+The React Router function that fetches a route's data on the server before the page renders.
+
+**Slug**:
+The URL-safe name of a course, as in `/courses/:slug`.
