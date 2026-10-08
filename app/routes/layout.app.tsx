@@ -5,12 +5,6 @@ import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
-// PROTOTYPE — Notification Feed (#19)
-import { getNotificationFeedConfig } from "~/lib/notification-feed-prototype.server";
-import {
-  NotificationFeedProvider,
-  NotificationPrototypeSwitcher,
-} from "~/components/notification-feed-prototype";
 import { eq, and, or, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
 import {
@@ -219,9 +213,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
-    notificationFeed: currentUserId
-      ? await getNotificationFeedConfig(currentUserId)
-      : null,
   };
 }
 
@@ -234,11 +225,9 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
-    notificationFeed,
   } = loaderData;
 
   return (
-    <NotificationFeedProvider config={notificationFeed}>
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
@@ -256,8 +245,6 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
-      <NotificationPrototypeSwitcher />
     </div>
-    </NotificationFeedProvider>
   );
 }
