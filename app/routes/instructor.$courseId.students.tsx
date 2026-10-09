@@ -5,13 +5,7 @@ import { UserRole } from "~/db/schema";
 import { isLapsed } from "~/lib/enrollments";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Users,
-  Award,
-  NotebookPen,
-} from "lucide-react";
+import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { db } from "~/db";
 import {
@@ -24,10 +18,9 @@ import {
   quizAttempts,
   lessonProgress,
   purchases,
-  notes,
   LessonProgressStatus,
 } from "~/db/schema";
-import { eq, and, or, sql, desc, inArray, isNull, max } from "drizzle-orm";
+import { eq, and, or, sql, desc, inArray, max } from "drizzle-orm";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -102,25 +95,6 @@ function getBestAttempt(userId: number, quizId: number) {
     .orderBy(desc(quizAttempts.score))
     .limit(1)
     .get();
-}
-
-// Every note a learner has written on this course's lessons, so the
-// instructor can see what their students are stuck on.
-function getNotesForLearner(userId: number, lessonIds: number[]) {
-  if (lessonIds.length === 0) return [];
-
-  return db
-    .select({
-      id: notes.id,
-      body: notes.body,
-      updatedAt: notes.updatedAt,
-      lessonTitle: lessons.title,
-    })
-    .from(notes)
-    .innerJoin(lessons, eq(notes.lessonId, lessons.id))
-    .where(and(eq(notes.userId, userId), inArray(notes.lessonId, lessonIds)))
-    .orderBy(desc(notes.updatedAt))
-    .all();
 }
 
 function getCourseLessonIds(courseId: number): number[] {
@@ -325,10 +299,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       lapsed: isLapsed(enrollment),
       progress,
       quizScores,
-      notes: getNotesForLearner(
-        enrollment.userId,
-        allCourseLessons.map((lesson) => lesson.id)
-      ),
     };
   });
 
@@ -528,41 +498,6 @@ export default function InstructorStudentRoster({
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {/* Student Notes */}
-      {students.some((student) => student.notes.length > 0) && (
-        <div className="mt-8">
-          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold">
-            <NotebookPen className="size-4 text-muted-foreground" />
-            Student notes
-          </h2>
-          <p className="mb-4 text-sm text-muted-foreground">
-            What your students wrote down as they worked through the course.
-          </p>
-
-          <div className="space-y-4">
-            {students
-              .filter((student) => student.notes.length > 0)
-              .map((student) => (
-                <Card key={student.userId}>
-                  <CardContent className="space-y-3 py-4">
-                    <h3 className="text-sm font-semibold">{student.name}</h3>
-                    {student.notes.map((note) => (
-                      <div key={note.id} className="border-l-2 pl-3">
-                        <p className="text-xs text-muted-foreground">
-                          {note.lessonTitle}
-                        </p>
-                        <p className="whitespace-pre-wrap text-sm">
-                          {note.body}
-                        </p>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
-        </div>
       )}
     </div>
   );
