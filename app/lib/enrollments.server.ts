@@ -8,13 +8,7 @@ import {
   type Notifications,
 } from "~/lib/notifications.server";
 
-// ─── Enrollments ───
-// Giving a Student an Enrollment on a course, whether it came from an
-// Individual Purchase or a Claimed Seat. See GLOSSARY.md for the language and
-// docs/adr/0004 for why an Enrollment is not tied to a Purchase.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
+// docs/adr/0004 explains why an Enrollment is not tied to a Purchase.
 
 export type Db = BetterSQLite3Database<typeof schema>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];

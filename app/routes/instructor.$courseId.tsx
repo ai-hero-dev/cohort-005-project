@@ -9,6 +9,7 @@ import {
 } from "@hello-pangea/dnd";
 import type { Route } from "./+types/instructor.$courseId";
 import { getCurrentUserId } from "~/lib/session";
+import { markdown } from "~/lib/text";
 import { CourseStatus, UserRole } from "~/db/schema";
 import { db } from "~/db";
 import {
@@ -167,7 +168,10 @@ function updateCourseSalesCopy(id: number, salesCopy: string) {
 
   return db
     .update(courses)
-    .set({ salesCopy, updatedAt: new Date().toISOString() })
+    .set({
+      salesCopy: markdown(salesCopy),
+      updatedAt: new Date().toISOString(),
+    })
     .where(eq(courses.id, id))
     .returning()
     .get();
@@ -283,7 +287,7 @@ function createLesson(
     .values({
       moduleId,
       title,
-      content,
+      content: content === null ? null : markdown(content),
       videoUrl,
       position: pos,
       durationMinutes,
@@ -1501,7 +1505,7 @@ export default function InstructorCourseEditor({
   const priceFetcher = useFetcher();
   const pppFetcher = useFetcher();
 
-  const [salesCopy, setSalesCopy] = useState(course.salesCopy);
+  const [salesCopy, setSalesCopy] = useState<string>(course.salesCopy);
   const salesCopyHasChanges = salesCopy !== course.salesCopy;
   const salesCopyIsEmpty = salesCopy.trim().length === 0;
 
