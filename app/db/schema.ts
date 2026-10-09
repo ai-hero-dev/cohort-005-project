@@ -7,6 +7,7 @@ import {
   uniqueIndex,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
+import type { Markdown, PlainText } from "~/lib/text";
 
 export enum UserRole {
   Student = "student",
@@ -69,7 +70,7 @@ export const courses = sqliteTable("courses", {
   description: text("description").notNull(),
   notes: text("notes"),
   // Markdown, non-empty. Enforced on write.
-  salesCopy: text("sales_copy").notNull(),
+  salesCopy: text("sales_copy").$type<Markdown>().notNull(),
   instructorId: integer("instructor_id")
     .notNull()
     .references(() => users.id),
@@ -108,7 +109,7 @@ export const lessons = sqliteTable("lessons", {
     .notNull()
     .references(() => modules.id),
   title: text("title").notNull(),
-  content: text("content"),
+  content: text("content").$type<Markdown>(),
   videoUrl: text("video_url"),
   githubRepoUrl: text("github_repo_url"),
   position: integer("position").notNull(),
@@ -341,9 +342,9 @@ export const comments = sqliteTable(
     parentId: integer("parent_id").references(
       (): AnySQLiteColumn => comments.id
     ),
-    // Markdown, 1–5000 chars. Enforced on write, rendered by
-    // renderComment (untrusted input — never renderMarkdown).
-    body: text("body").notNull(),
+    // 1–5000 chars. Enforced on write, rendered by renderComment (untrusted
+    // input — never renderMarkdown).
+    body: text("body").$type<Markdown>().notNull(),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -404,8 +405,7 @@ export const notes = sqliteTable(
     lessonId: integer("lesson_id")
       .notNull()
       .references(() => lessons.id),
-    // Plain text, capped on write. Never rendered as Markdown.
-    body: text("body").notNull(),
+    body: text("body").$type<PlainText>().notNull(),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
