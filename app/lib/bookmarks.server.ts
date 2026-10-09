@@ -4,13 +4,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { bookmarks, courses, lessons, modules } from "~/db/schema";
 import { savedLessonColumns } from "~/lib/saved-lesson.server";
 
-// ─── Bookmarks ───
-// A Student's flag on a Lesson, so they can find it again. One per Student per
-// Lesson, enforced by a unique index. See GLOSSARY.md for the language.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
-
 export type Db = BetterSQLite3Database<typeof schema>;
 
 /** Whether the Student has bookmarked the Lesson. */
