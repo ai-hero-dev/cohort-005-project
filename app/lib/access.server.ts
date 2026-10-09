@@ -42,14 +42,9 @@ function findPurchase(userId: number, courseId: number) {
     .get();
 }
 
-// ─── Access Resolution ───
-// One place that answers "who is this, and what may they do with this course?".
-//
 // getAccess never throws — the lesson page needs to render a paywall preview for
 // signed-out and unenrolled visitors rather than erroring. The require* wrappers
 // are built on it for the routes that should just reject.
-//
-// Uses positional parameters (project convention).
 
 export type Access = {
   userId: number | null;
