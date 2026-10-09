@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { LessonProgressStatus, RefundStatus, UserRole } from "~/db/schema";
 import {
@@ -20,8 +20,6 @@ import {
   fakeNotifications,
   type FakeNotifications,
 } from "./notifications.fake.server";
-
-type TestDb = ReturnType<typeof createTestDb>;
 
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 
