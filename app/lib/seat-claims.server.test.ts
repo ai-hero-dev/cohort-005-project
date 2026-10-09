@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { enrollStudent, isEnrolled } from "./enrollments.server";
 import { approveRefundRequest, raiseRefundRequest } from "./refunds.server";
@@ -8,8 +8,6 @@ import {
   fakeNotifications,
   type FakeNotifications,
 } from "./notifications.fake.server";
-
-type TestDb = ReturnType<typeof createTestDb>;
 
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 

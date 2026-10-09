@@ -5,6 +5,7 @@ import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
 import { getCurrentUserId } from "~/lib/session";
 import { getAccess, requireContentAccess } from "~/lib/access.server";
 import { renderComment } from "~/lib/comment-markdown.server";
+import { markdown, type Markdown } from "~/lib/text";
 import {
   createComment,
   deleteComment,
@@ -115,7 +116,7 @@ type CommentAuthor = {
 
 type ThreadComment = {
   id: number;
-  body: string;
+  body: Markdown;
   createdAt: string;
   editedAt: string | null;
   deleted: boolean;
@@ -389,7 +390,7 @@ function getLessonThread(lessonId: number): ThreadComment[] {
     const deleted = row.deletedAt !== null;
     return {
       id: row.id,
-      body: deleted ? "" : row.body,
+      body: deleted ? markdown("") : row.body,
       createdAt: row.createdAt,
       editedAt: deleted ? null : row.editedAt,
       deleted,
@@ -1357,7 +1358,6 @@ function LessonNote({
 
         <fetcher.Form method="post" className="space-y-3">
           <input type="hidden" name="intent" value="save-note" />
-          {/* A Note is plain text — never passed through the Markdown renderer. */}
           <Textarea
             name="body"
             rows={6}
