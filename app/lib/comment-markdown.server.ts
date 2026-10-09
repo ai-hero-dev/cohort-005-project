@@ -1,5 +1,6 @@
 import { marked, Renderer } from "marked";
 import { type Highlighter, createHighlighter } from "shiki";
+import type { Markdown } from "~/lib/text";
 
 // ─── Comment Rendering ───
 // Deliberately separate from renderMarkdown (~/lib/markdown.server).
@@ -79,7 +80,7 @@ function safeHref(href: string | null): string | null {
   }
 }
 
-export async function renderComment(markdown: string): Promise<string> {
+export async function renderComment(markdown: Markdown): Promise<string> {
   const hl = await getHighlighter();
 
   const renderer = new Renderer();
