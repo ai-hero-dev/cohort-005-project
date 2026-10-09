@@ -14,13 +14,6 @@ import {
   type Notifications,
 } from "~/lib/notifications.server";
 
-// ─── Seat claims ───
-// A Student claiming a Seat on a Team Licence, which gives them an Enrollment
-// through the Enrollment service. See GLOSSARY.md for the language.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
-
 export type Db = BetterSQLite3Database<typeof schema>;
 
 type Seat = typeof coupons.$inferSelect;
