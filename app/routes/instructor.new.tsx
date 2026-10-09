@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Route } from "./+types/instructor.new";
 import { getCurrentUserId } from "~/lib/session";
 import { parseFormData } from "~/lib/validation";
+import { markdown } from "~/lib/text";
 import { UserRole } from "~/db/schema";
 import { db } from "~/db";
 import { users, categories, courses, CourseStatus } from "~/db/schema";
@@ -62,7 +63,7 @@ function createCourse(
       title,
       slug,
       description,
-      salesCopy,
+      salesCopy: markdown(salesCopy),
       instructorId,
       categoryId,
       status: CourseStatus.Draft,

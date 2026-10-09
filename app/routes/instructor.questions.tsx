@@ -16,6 +16,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
 import { MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { parseFormData } from "~/lib/validation";
+import type { Markdown } from "~/lib/text";
 import { db } from "~/db";
 import {
   comments,
@@ -30,7 +31,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 
 type QueuedQuestion = {
   id: number;
-  body: string;
+  body: Markdown;
   createdAt: string;
   lessonId: number;
   lessonTitle: string;

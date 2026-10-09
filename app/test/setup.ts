@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import path from "path";
 import { fileURLToPath } from "url";
 import * as schema from "~/db/schema";
+import { markdown } from "~/lib/text";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,11 +29,13 @@ export function createTestDb() {
   return testDb;
 }
 
+export type TestDb = ReturnType<typeof createTestDb>;
+
 /**
  * Seeds a minimal set of base data (user, category, course) that most tests need.
  * Returns the created IDs for use in test assertions.
  */
-export function seedBaseData(testDb: ReturnType<typeof createTestDb>) {
+export function seedBaseData(testDb: TestDb) {
   const user = testDb
     .insert(schema.users)
     .values({
@@ -65,7 +68,7 @@ export function seedBaseData(testDb: ReturnType<typeof createTestDb>) {
       title: "Test Course",
       slug: "test-course",
       description: "A test course",
-      salesCopy: "## Test Course\n\nSales copy for the test course.",
+      salesCopy: markdown("## Test Course\n\nSales copy for the test course."),
       instructorId: instructor.id,
       categoryId: category.id,
       status: schema.CourseStatus.Published,
