@@ -30,13 +30,7 @@ import {
   type RuleBreak,
 } from "~/lib/refund-rules";
 
-// ─── Refunds ───
-// Everything about Refund Requests: whether a Purchase may be refunded, raising
-// a Refund Request, and a Platform Admin deciding one. See GLOSSARY.md for the
-// language and docs/adr/0001–0004 for why it works the way it does.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
+// docs/adr/0001–0004 explain why Refunds work the way they do.
 
 export type Db = BetterSQLite3Database<typeof schema>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
