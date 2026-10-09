@@ -374,3 +374,46 @@ export const videoWatchEvents = sqliteTable("video_watch_events", {
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
 });
+
+export const bookmarks = sqliteTable(
+  "bookmarks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    lessonId: integer("lesson_id")
+      .notNull()
+      .references(() => lessons.id),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("bookmarks_user_lesson_unique").on(table.userId, table.lessonId),
+  ]
+);
+
+export const notes = sqliteTable(
+  "notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    lessonId: integer("lesson_id")
+      .notNull()
+      .references(() => lessons.id),
+    // Plain text, capped on write. Never rendered as Markdown.
+    body: text("body").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("notes_user_lesson_unique").on(table.userId, table.lessonId),
+  ]
+);
