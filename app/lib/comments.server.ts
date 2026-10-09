@@ -3,20 +3,13 @@ import * as schema from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { comments, courses, lessons, modules } from "~/db/schema";
 import { MAX_COMMENT_LENGTH, MIN_COMMENT_LENGTH } from "~/lib/comments";
+import { markdown } from "~/lib/text";
 import {
   archiveForCommentSafely,
   sendSafely,
   findNotificationPerson,
   type Notifications,
 } from "~/lib/notifications.server";
-
-// ─── Comments ───
-// Posting, editing and soft-deleting comments on a lesson: Discussion Questions and
-// Discussion Replies. See GLOSSARY.md for the language.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one, and the Notifications port last, so tests can hand in a fake. Uses
-// positional parameters (project convention).
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
@@ -53,7 +46,7 @@ export async function createComment(
   now: Date,
   notifications: Notifications
 ): Promise<CreateCommentResult> {
-  const trimmed = body.trim();
+  const trimmed = markdown(body.trim());
   if (trimmed.length < MIN_COMMENT_LENGTH) {
     return { ok: false, error: "Comment cannot be empty" };
   }
@@ -256,7 +249,7 @@ export function editComment(
   body: string,
   now: Date
 ): EditCommentResult {
-  const trimmed = body.trim();
+  const trimmed = markdown(body.trim());
   if (trimmed.length < MIN_COMMENT_LENGTH) {
     return { ok: false, error: "Comment cannot be empty" };
   }
