@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { UserRole } from "~/db/schema";
+import { plainText } from "~/lib/text";
 import { getNote, listNotes, saveNote } from "./notes.server";
-
-type TestDb = ReturnType<typeof createTestDb>;
 
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 
@@ -66,7 +65,7 @@ describe("saving a Note", () => {
     expect(() =>
       db
         .insert(schema.notes)
-        .values({ userId: base.user.id, lessonId: lessonIds[0], body: "Dupe" })
+        .values({ userId: base.user.id, lessonId: lessonIds[0], body: plainText("Dupe") })
         .run()
     ).toThrow();
   });

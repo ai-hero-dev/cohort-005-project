@@ -4,17 +4,10 @@ import { and, desc, eq } from "drizzle-orm";
 import { courses, lessons, modules, notes } from "~/db/schema";
 import { savedLessonColumns } from "~/lib/saved-lesson.server";
 import { MAX_NOTE_LENGTH } from "~/lib/notes";
+import { plainText } from "~/lib/text";
 
-// ─── Notes ───
-// A Student's own writing about a Lesson, private to the Student who wrote it.
-// One per Student per Lesson, enforced by a unique index. A Note body is plain
-// text and is never rendered as Markdown. See GLOSSARY.md for the language.
-//
 // Nothing outside the owning Student's Lesson page and Saved page may read a
 // Note body: no Instructor or Platform Admin view.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
@@ -46,7 +39,7 @@ export function saveNote(
   body: string,
   now: Date
 ): SaveNoteResult {
-  const trimmed = body.trim();
+  const trimmed = plainText(body.trim());
   if (trimmed.length === 0) {
     return { ok: false, error: "Write something before saving your note" };
   }
