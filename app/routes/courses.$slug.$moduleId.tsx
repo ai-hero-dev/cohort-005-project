@@ -1,11 +1,10 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/courses.$slug.$moduleId";
-import { getCurrentUserId } from "~/lib/session";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
 import { db } from "~/db";
 import {
   categories,
   courses,
-  enrollments,
   lessonProgress,
   lessons,
   modules,
@@ -35,10 +34,6 @@ const paramsSchema = z.object({
   slug: z.string().min(1),
   moduleId: z.coerce.number().int(),
 });
-
-function getCourseBySlug(slug: string) {
-  return db.select().from(courses).where(eq(courses.slug, slug)).get();
-}
 
 function getCourseWithDetails(id: number) {
   const course = db
@@ -111,18 +106,6 @@ function getModuleWithLessons(id: number) {
   return { ...mod, lessons: moduleLessons };
 }
 
-function isUserEnrolled(userId: number, courseId: number) {
-  const existing = db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
-
-  return !!existing;
-}
-
 function getLessonProgressForCourse(userId: number, courseId: number) {
   const courseModules = db
     .select({ id: modules.id })
@@ -166,10 +149,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const { slug, moduleId } = parsed.data;
 
-  const course = getCourseBySlug(slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
+  // Public page: signed-out visitors and people without an Enrollment still
+  // see it. Not found covers an unknown course and a module from another one.
+  const decisions = await coursePermissions.getCourseDecisions(request, {
+    slug,
+    moduleId,
+  });
+  if (!decisions.found) {
+    throw data("Module not found", { status: 404 });
   }
+  const { course, person } = decisions;
+  const canView = decisions.view.allowed;
+  const canTake = decisions.take.allowed;
 
   const courseWithDetails = getCourseWithDetails(course.id);
   if (!courseWithDetails) {
@@ -181,27 +172,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw data("Module not found", { status: 404 });
   }
 
-  // Verify module belongs to this course
-  if (moduleWithLessons.courseId !== course.id) {
-    throw data("Module not found in this course", { status: 404 });
-  }
-
-  const currentUserId = await getCurrentUserId(request);
-
-  let enrolled = false;
-  let lessonProgressMap: Record<number, string> = {};
-
-  if (currentUserId) {
-    enrolled = isUserEnrolled(currentUserId, course.id);
-
-    if (enrolled) {
-      const progressRecords = getLessonProgressForCourse(
-        currentUserId,
-        course.id
-      );
-      for (const record of progressRecords) {
-        lessonProgressMap[record.lessonId] = record.status;
-      }
+  // Progress is shown only to someone who can take the course.
+  const lessonProgressMap: Record<number, string> = {};
+  if (person && canTake) {
+    const progressRecords = getLessonProgressForCourse(person.id, course.id);
+    for (const record of progressRecords) {
+      lessonProgressMap[record.lessonId] = record.status;
     }
   }
 
@@ -228,7 +204,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       instructorBio: courseWithDetails.instructorBio,
     },
     module: moduleWithLessons,
-    enrolled,
+    canView,
+    canTake,
     lessonProgressMap,
     moduleProgress,
     completedLessons,
@@ -269,7 +246,8 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
   const {
     course,
     module: mod,
-    enrolled,
+    canView,
+    canTake,
     lessonProgressMap,
     moduleProgress,
     completedLessons,
@@ -307,8 +285,8 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
         )}
       </div>
 
-      {/* Progress bar for enrolled students */}
-      {enrolled && totalLessons > 0 && (
+      {/* Progress bar for people taking the course */}
+      {canTake && totalLessons > 0 && (
         <div className="mb-6">
           <div className="mb-1 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
@@ -362,7 +340,7 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
 
             const content = (
               <div className="flex items-center gap-3 rounded-md px-3 py-3 text-sm">
-                {enrolled ? (
+                {canTake ? (
                   isCompleted ? (
                     <CheckCircle2 className="size-4 shrink-0 text-green-500" />
                   ) : isInProgress ? (
@@ -395,7 +373,7 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
               </div>
             );
 
-            if (enrolled) {
+            if (canView) {
               return (
                 <Link
                   key={lesson.id}
