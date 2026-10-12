@@ -6,11 +6,11 @@ import {
   users,
   courses,
   enrollments,
-  purchases,
 } from "~/db/schema";
 import { getCurrentUserId } from "~/lib/session";
 import { resolveCountry } from "~/lib/country.server";
-import { checkPppAccess } from "~/lib/ppp";
+import { checkCountryLock } from "~/lib/ppp";
+import { getNewestIndividualPurchase } from "~/lib/refunds.server";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -34,14 +34,6 @@ function isUserEnrolled(userId: number, courseId: number) {
   return !!findEnrollment(userId, courseId);
 }
 
-function findPurchase(userId: number, courseId: number) {
-  return db
-    .select()
-    .from(purchases)
-    .where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId)))
-    .get();
-}
-
 // getAccess never throws — the lesson page needs to render a paywall preview for
 // signed-out and unenrolled visitors rather than erroring. The require* wrappers
 // are built on it for the routes that should just reject.
@@ -63,6 +55,12 @@ export type Access = {
    * Staff always can. Students need an enrollment that isn't PPP-blocked.
    */
   canViewContent: boolean;
+  /**
+   * May they take the course (progress, mark complete, quizzes, Watched time)?
+   * Only a Person with an Enrollment that isn't under a Country Lock — staff
+   * get no exemption here unless they're enrolled.
+   */
+  canTakeCourse: boolean;
 };
 
 const SIGNED_OUT: Access = {
@@ -76,6 +74,7 @@ const SIGNED_OUT: Access = {
   pppBlockedCountry: null,
   pppPurchaseCountry: null,
   canViewContent: false,
+  canTakeCourse: false,
 };
 
 export async function getAccess(
@@ -102,9 +101,11 @@ export async function getAccess(
   };
 
   if (enrolled && !isStaff && course) {
-    const purchase = findPurchase(userId, courseId);
+    // Judged against the newest Individual Purchase only. A Team Licence or a
+    // Claimed Seat never puts playback under a Country Lock (ADR-0013).
+    const purchase = getNewestIndividualPurchase(db, userId, courseId);
     const currentCountry = await resolveCountry(request);
-    ppp = checkPppAccess(
+    ppp = checkCountryLock(
       course.price,
       course.pppEnabled,
       purchase?.country ?? null,
@@ -123,6 +124,7 @@ export async function getAccess(
     pppBlockedCountry: ppp.blockedCountry,
     pppPurchaseCountry: ppp.purchaseCountry,
     canViewContent: isStaff || (enrolled && !ppp.blocked),
+    canTakeCourse: enrolled && !ppp.blocked,
   };
 }
 
@@ -152,6 +154,28 @@ export async function requireContentAccess(
   }
 
   if (!access.canViewContent) {
+    throw data("You must be enrolled in this course.", { status: 403 });
+  }
+
+  return access;
+}
+
+/**
+ * Throws 401 when signed out, 403 unless the user can take the course: an
+ * Enrollment that isn't under a Country Lock. Use for progress, quizzes and
+ * Watched time.
+ */
+export async function requireTakeCourse(
+  request: Request,
+  courseId: number
+): Promise<Access> {
+  const access = await getAccess(request, courseId);
+
+  if (!access.userId) {
+    throw data("Select a user from the DevUI panel.", { status: 401 });
+  }
+
+  if (!access.canTakeCourse) {
     throw data("You must be enrolled in this course.", { status: 403 });
   }
 
