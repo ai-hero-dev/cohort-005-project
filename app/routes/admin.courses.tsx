@@ -3,16 +3,14 @@ import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/admin.courses";
-import { getCurrentUserId } from "~/lib/session";
+import { people } from "~/modules/permissions/person.server";
 import { parseFormData } from "~/lib/validation";
 import {
-  UserRole,
   CourseStatus,
   courses,
   modules,
   lessons,
   enrollments,
-  users,
 } from "~/db/schema";
 import { db } from "~/db";
 import { eq, or, sql } from "drizzle-orm";
@@ -36,10 +34,6 @@ const adminCourseActionSchema = z.discriminatedUnion("intent", [
     status: z.nativeEnum(CourseStatus),
   }),
 ]);
-
-function getUserById(id: number) {
-  return db.select().from(users).where(eq(users.id, id)).get();
-}
 
 function getAllCourses() {
   return db.select().from(courses).all();
@@ -90,21 +84,7 @@ export function meta() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("Select a user from the DevUI panel to manage courses.", {
-      status: 401,
-    });
-  }
-
-  const currentUser = getUserById(currentUserId);
-
-  if (!currentUser || currentUser.role !== UserRole.Admin) {
-    throw data("Only admins can access this page.", {
-      status: 403,
-    });
-  }
+  await people.requirePlatformAdmin(request);
 
   const allCourses = getAllCourses();
 
@@ -118,22 +98,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("You must be logged in.", { status: 401 });
-  }
-
-  const currentUser = getUserById(currentUserId);
-  if (!currentUser || currentUser.role !== UserRole.Admin) {
-    throw data("Only admins can manage courses.", { status: 403 });
-  }
+  await people.requirePlatformAdmin(request);
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, adminCourseActionSchema);
 
   if (!parsed.success) {
-    return data({ error: Object.values(parsed.errors)[0] ?? "Invalid input." }, { status: 400 });
+    return data(
+      { error: Object.values(parsed.errors)[0] ?? "Invalid input." },
+      { status: 400 }
+    );
   }
 
   const { intent } = parsed.data;
@@ -198,7 +172,11 @@ function CourseRow({
 
   function handleStatusChange(newStatus: string) {
     statusFetcher.submit(
-      { intent: "update-status", courseId: String(course.id), status: newStatus },
+      {
+        intent: "update-status",
+        courseId: String(course.id),
+        status: newStatus,
+      },
       { method: "post" }
     );
   }
@@ -213,7 +191,10 @@ function CourseRow({
     <tr className="border-b border-border last:border-0">
       <td className="px-4 py-3">
         <div>
-          <Link to={`/instructor/${course.id}`} className="text-sm font-medium hover:underline">
+          <Link
+            to={`/instructor/${course.id}`}
+            className="text-sm font-medium hover:underline"
+          >
             {course.title}
           </Link>
           <p className="text-xs text-muted-foreground">{course.slug}</p>
@@ -257,10 +238,18 @@ function CourseRowSkeleton() {
         <Skeleton className="mb-1 h-4 w-40" />
         <Skeleton className="h-3 w-24" />
       </td>
-      <td className="px-4 py-3"><Skeleton className="h-8 w-32" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-4 w-8" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-4 w-8" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-8 w-32" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-8" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-8" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-24" />
+      </td>
     </tr>
   );
 }
@@ -279,11 +268,21 @@ export function HydrateFallback() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Course</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Lessons</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Students</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Created</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Course
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Lessons
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Students
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Created
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -379,10 +378,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
-      title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "Only admins can access this page.";
+      title = "Not allowed";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Only Platform Admins can see this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;
