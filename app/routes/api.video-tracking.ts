@@ -1,7 +1,7 @@
 import { data } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/api.video-tracking";
-import { getCurrentUserId } from "~/lib/session";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
 import { parseJsonBody } from "~/lib/validation";
 import { db } from "~/db";
 import { videoWatchEvents } from "~/db/schema";
@@ -13,11 +13,6 @@ const videoTrackingSchema = z.object({
 });
 
 export async function action({ request }: Route.ActionArgs) {
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
-    throw data("Unauthorized", { status: 401 });
-  }
-
   const parsed = await parseJsonBody(request, videoTrackingSchema);
 
   if (!parsed.success) {
@@ -26,10 +21,17 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { lessonId, eventType, positionSeconds } = parsed.data;
 
-  db
-    .insert(videoWatchEvents)
+  // Watched time feeds the Watch Limit for Refunds, so it's recorded only for
+  // people who can take the course the lesson belongs to.
+  const { person } = await coursePermissions.requireCapability(
+    request,
+    "take",
+    { lessonId }
+  );
+
+  db.insert(videoWatchEvents)
     .values({
-      userId: currentUserId,
+      userId: person.id,
       lessonId,
       eventType,
       positionSeconds,
