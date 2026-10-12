@@ -1,7 +1,7 @@
 import { Link, isRouteErrorResponse, useSearchParams } from "react-router";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Route } from "./+types/instructor.analytics";
-import { requireInstructorOrAdmin } from "~/lib/access.server";
+import { people } from "~/modules/permissions/person.server";
 import {
   ANALYTICS_RANGES,
   PLATFORM_FEE_PERCENT,
@@ -64,7 +64,11 @@ export function meta() {
 }
 
 export async function loader({ request, url }: Route.LoaderArgs) {
-  const viewer = await requireInstructorOrAdmin(request);
+  const person = await people.requireInstructorOrPlatformAdmin(request);
+  const viewer = {
+    userId: person.id,
+    isAdmin: person.role === "platform-admin",
+  };
   return instructorAnalytics.get(viewer, url.searchParams, new Date());
 }
 
@@ -1051,7 +1055,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       message =
         typeof error.data === "string"
           ? error.data
-          : "You don't have access to this page.";
+          : "You aren't allowed to see this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

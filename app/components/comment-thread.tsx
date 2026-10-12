@@ -24,7 +24,7 @@ export type RenderedComment = {
     name: string;
     avatarUrl: string | null;
     isInstructor: boolean;
-    isAdmin: boolean;
+    isPlatformAdmin: boolean;
   };
   replies: RenderedComment[];
 };
@@ -245,7 +245,9 @@ function CommentItem({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{comment.author.name}</span>
             {comment.author.isInstructor && <AuthorBadge label="Instructor" />}
-            {comment.author.isAdmin && <AuthorBadge label="Admin" />}
+            {comment.author.isPlatformAdmin && (
+              <AuthorBadge label="Platform Admin" />
+            )}
             <span
               className="text-xs text-muted-foreground"
               suppressHydrationWarning
