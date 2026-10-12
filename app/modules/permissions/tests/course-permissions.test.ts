@@ -201,6 +201,7 @@ describe("decide", () => {
       found: true,
       course: expect.objectContaining({ id: base.course.id }),
       person: null,
+      enrolled: false,
       view: signedOut,
       take: signedOut,
       manage: signedOut,
@@ -230,6 +231,33 @@ describe("decide", () => {
 
     expect(decideOnCourse(owningInstructor())).toMatchObject({
       take: { allowed: true },
+    });
+  });
+});
+
+describe("decide: Enrollment", () => {
+  it("says an enrolled Student is enrolled", () => {
+    enroll(base.user.id);
+
+    expect(decideOnCourse(student())).toMatchObject({ enrolled: true });
+  });
+
+  it("says an unenrolled Student, owning Instructor or Platform Admin is not enrolled", () => {
+    expect(decideOnCourse(student())).toMatchObject({ enrolled: false });
+    expect(decideOnCourse(owningInstructor())).toMatchObject({
+      enrolled: false,
+    });
+    expect(decideOnCourse(platformAdmin())).toMatchObject({ enrolled: false });
+  });
+
+  it("says a Student under Country Lock is still enrolled", () => {
+    setPrice(10000);
+    enroll(base.user.id);
+    buy(base.user.id, "IN");
+
+    expect(decideOnCourse(student("GB"))).toMatchObject({
+      enrolled: true,
+      take: { allowed: false, reason: { kind: "country-lock" } },
     });
   });
 });

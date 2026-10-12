@@ -32,8 +32,7 @@ export type DenialReason =
   | { kind: "not-owning-instructor-or-platform-admin" };
 
 export type Decision =
-  | { allowed: true }
-  | { allowed: false; reason: DenialReason };
+  { allowed: true } | { allowed: false; reason: DenialReason };
 
 export type Course = typeof courses.$inferSelect;
 
@@ -43,6 +42,8 @@ export type CourseDecisions =
       found: true;
       course: Course;
       person: Person | null;
+      /** Has an Enrollment, even one under Country Lock. */
+      enrolled: boolean;
       view: Decision;
       take: Decision;
       manage: Decision;
@@ -68,6 +69,7 @@ export function decide(
       found: true,
       course,
       person,
+      enrolled: false,
       view: signedOut,
       take: signedOut,
       manage: signedOut,
@@ -102,6 +104,7 @@ export function decide(
     found: true,
     course,
     person,
+    enrolled,
     view: canManage ? ALLOWED : take,
     take,
     manage: canManage

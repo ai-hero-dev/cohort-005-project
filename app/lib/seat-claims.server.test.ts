@@ -133,7 +133,14 @@ describe("claiming a Seat", () => {
   it("refuses a Seat whose Team Licence was refunded", async () => {
     const { purchase, seats } = buySeats(2);
     const platformAdmin = addStudent("Pat");
-    await approveRefundRequest(db, await raise(purchase.id), platformAdmin.id, null, NOW, fakeNotifications());
+    await approveRefundRequest(
+      db,
+      await raise(purchase.id),
+      platformAdmin.id,
+      null,
+      NOW,
+      fakeNotifications()
+    );
 
     expect(
       await claimSeat(db, seats[0].code, base.user.id, "GB", NOW, notifications)
@@ -212,6 +219,22 @@ describe("claiming a Seat", () => {
       seats[0].code,
       base.user.id,
       "IN",
+      NOW,
+      notifications
+    );
+
+    expect(result.ok).toBe(true);
+    expect(isEnrolled(db, base.user.id, base.course.id)).toBe(true);
+  });
+
+  it("lets a Student whose country is unknown claim a Seat on a Team Licence bought at a Purchasing-Power Price", async () => {
+    const { seats } = buySeats(1, "IN");
+
+    const result = await claimSeat(
+      db,
+      seats[0].code,
+      base.user.id,
+      null,
       NOW,
       notifications
     );
@@ -398,7 +421,14 @@ function addStudent(name: string) {
 }
 
 async function raise(purchaseId: number) {
-  const result = await raiseRefundRequest(db, purchaseId, teamAdmin.id, "No.", NOW, fakeNotifications());
+  const result = await raiseRefundRequest(
+    db,
+    purchaseId,
+    teamAdmin.id,
+    "No.",
+    NOW,
+    fakeNotifications()
+  );
   if (!result.ok) throw new Error(result.error);
   return result.refundRequestId;
 }

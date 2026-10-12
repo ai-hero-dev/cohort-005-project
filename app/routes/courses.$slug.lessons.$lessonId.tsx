@@ -5,7 +5,6 @@ import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
 import {
   coursePermissions,
   type Capability,
-  type CourseDecisions,
   type CourseRef,
   type DenialReason,
 } from "~/modules/permissions/course-permissions.server";
@@ -211,12 +210,6 @@ const INTENT_CAPABILITY: Record<string, Capability | undefined> = {
   "mark-complete": "take",
   "submit-quiz": "take",
 };
-
-/** Whether the Person has an Enrollment, even one under Country Lock. */
-function isEnrolled(decisions: Extract<CourseDecisions, { found: true }>) {
-  const { take } = decisions;
-  return take.allowed || take.reason.kind === "country-lock";
-}
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -621,9 +614,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: `${title} — ${courseTitle} — Cadence` }];
 }
 
-/** Why someone can't view a lesson's content. */
-type LockedReason = DenialReason;
-
 type FlatLesson = {
   id: number;
   title: string;
@@ -663,9 +653,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw data("Lesson not found", { status: 404 });
   }
 
-  const { course, person, view, take, manage } = decisions;
+  const { course, person, enrolled, view, take, manage } = decisions;
   const currentUserId = person?.id ?? null;
-  const enrolled = isEnrolled(decisions);
   const lessonId = Number(params.lessonId);
 
   const courseWithDetails = getCourseWithDetails(course.id);
@@ -688,7 +677,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // the course outline — never the body, video or quiz — plus the reason, so
   // the page can show the right call to action.
   if (!view.allowed) {
-    const lockedReason: LockedReason = view.reason;
+    const lockedReason: DenialReason = view.reason;
 
     return {
       view: "locked" as const,
@@ -748,7 +737,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const instructor = getUserById(course.instructorId);
   const comments = await renderThread(getLessonThread(lessonId));
 
-  // The Student's own Bookmark and Note on this lesson.
   const bookmarked = currentUserId
     ? isBookmarked(db, currentUserId, lessonId)
     : false;
@@ -1077,28 +1065,16 @@ function LockedLesson({
               {lockedReason.kind === "country-lock" ? (
                 <>
                   <ShieldAlert className="mx-auto mb-4 size-12 text-amber-500" />
-                  <h2 className="mb-3 text-xl font-semibold">
-                    Access Restricted
-                  </h2>
+                  <h2 className="mb-3 text-xl font-semibold">Country Lock</h2>
                   <p className="mb-4 text-muted-foreground">
-                    You purchased this course with a Purchasing Power Parity
-                    discount while in{" "}
-                    <strong>
-                      {lockedReason.purchaseCountry
-                        ? countryName(lockedReason.purchaseCountry)
-                        : "your original country"}
-                    </strong>
-                    , but you're currently accessing from{" "}
-                    <strong>
-                      {lockedReason.currentCountry
-                        ? countryName(lockedReason.currentCountry)
-                        : "a different country"}
-                    </strong>
-                    .
+                    You bought this course at a Purchasing-Power Price in{" "}
+                    <strong>{countryName(lockedReason.purchaseCountry)}</strong>
+                    , but you're currently in{" "}
+                    <strong>{countryName(lockedReason.currentCountry)}</strong>.
                   </p>
                   <p className="mb-6 text-sm text-muted-foreground">
-                    PPP-discounted courses can only be accessed from the country
-                    where the purchase was made. This helps keep courses
+                    A course bought at a Purchasing-Power Price only works from
+                    the country it was bought in. This helps keep courses
                     affordable for students in lower-income regions.
                   </p>
                   <Link to={`/courses/${course.slug}`}>

@@ -273,7 +273,6 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
         )}
       </div>
 
-      {/* Progress bar for people taking the course */}
       {canTake && totalLessons > 0 && (
         <div className="mb-6">
           <div className="mb-1 flex items-center justify-between text-sm">

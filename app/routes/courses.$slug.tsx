@@ -3,10 +3,7 @@ import { Link, useFetcher, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/courses.$slug";
-import {
-  coursePermissions,
-  type CourseDecisions,
-} from "~/modules/permissions/course-permissions.server";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
 import { db } from "~/db";
 import {
   courses,
@@ -126,12 +123,6 @@ function getLessonCountForCourse(courseId: number) {
     .get();
 
   return count?.count ?? 0;
-}
-
-/** Whether the Person has an Enrollment, even one under Country Lock. */
-function isEnrolled(decisions: Extract<CourseDecisions, { found: true }>) {
-  const { take } = decisions;
-  return take.allowed || take.reason.kind === "country-lock";
 }
 
 function getCourseLessonIds(courseId: number): number[] {
@@ -377,9 +368,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   if (!decisions.found) {
     throw data("Course not found", { status: 404 });
   }
-  const { course, person, view, take } = decisions;
+  const { course, person, enrolled, view, take } = decisions;
   const currentUserId = person?.id ?? null;
-  const enrolled = isEnrolled(decisions);
   const canView = view.allowed;
   const canTake = take.allowed;
   const countryLock =

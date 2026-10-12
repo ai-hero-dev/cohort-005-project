@@ -48,8 +48,9 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
   const reply = alias(comments, "reply");
   const replyAuthor = alias(users, "reply_author");
 
-  // Correlated: matches a live reply, by staff, to the outer question.
-  const staffReply = db
+  // Correlated: matches a live reply to the outer question by its course's
+  // owning Instructor or a Platform Admin.
+  const ownerOrAdminReply = db
     .select({ one: sql`1` })
     .from(reply)
     .innerJoin(replyAuthor, eq(replyAuthor.id, reply.userId))
@@ -67,10 +68,11 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
   const conditions = [
     isNull(comments.parentId),
     isNull(comments.deletedAt),
-    // Staff asking their own question shouldn't queue up as work for themselves.
+    // An owning Instructor or Platform Admin asking their own question shouldn't
+    // queue up as work for themselves.
     ne(author.role, UserRole.Admin),
     ne(comments.userId, courses.instructorId),
-    notExists(staffReply),
+    notExists(ownerOrAdminReply),
   ];
 
   if (instructorId !== null) {
@@ -295,7 +297,9 @@ export default function InstructorQuestions({
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-8">
       <nav className="mb-6 text-sm text-muted-foreground">
-        {/* /instructor is instructor-only, so admins go back to their own list. */}
+        {/* /instructor lists only the courses this person owns, but a Platform
+            Admin's queue spans every course, so they go back to the list of
+            every course. */}
         <Link
           to={isPlatformAdmin ? "/admin/courses" : "/instructor"}
           className="hover:text-foreground"
