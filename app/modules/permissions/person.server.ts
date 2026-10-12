@@ -1,6 +1,7 @@
 import { db } from "~/db";
 import {
   getPerson,
+  requireInstructorOrPlatformAdmin,
   requirePerson,
   requirePlatformAdmin,
   type Db,
@@ -36,6 +37,14 @@ export function createPeople(database: Db) {
      */
     requirePlatformAdmin(request: Request) {
       return requirePlatformAdmin(database, request);
+    },
+
+    /**
+     * The Person making this request, who must be an Instructor or a
+     * Platform Admin. Throws 401 when signed out, 403 otherwise.
+     */
+    requireInstructorOrPlatformAdmin(request: Request) {
+      return requireInstructorOrPlatformAdmin(database, request);
     },
   };
 }
