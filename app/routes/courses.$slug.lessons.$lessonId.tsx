@@ -66,7 +66,7 @@ import { renderMarkdown } from "~/lib/markdown.server";
 import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
-import { COUNTRIES } from "~/lib/ppp";
+import { countryName } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
 
 const lessonParamsSchema = z.object({
@@ -608,6 +608,16 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: `${title} — ${courseTitle} — Cadence` }];
 }
 
+/** Why someone can't view a lesson's content. */
+type LockedReason =
+  | { kind: "signed-out" }
+  | { kind: "not-enrolled" }
+  | {
+      kind: "country-lock";
+      purchaseCountry: string | null;
+      currentCountry: string | null;
+    };
+
 type FlatLesson = {
   id: number;
   title: string;
@@ -671,6 +681,45 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const access = await getAccess(request, course.id);
   const currentUserId = access.userId;
+
+  const curriculum = courseWithDetails.modules.map((m) => ({
+    id: m.id,
+    title: m.title,
+    lessons: m.lessons.map((l) => ({
+      id: l.id,
+      title: l.title,
+    })),
+  }));
+
+  // Someone who can't view the content gets the lesson's title, its module and
+  // the course outline — never the body, video or quiz — plus the reason, so
+  // the page can show the right call to action.
+  if (!access.canViewContent) {
+    const lockedReason: LockedReason = access.pppBlocked
+      ? {
+          kind: "country-lock",
+          purchaseCountry: access.pppPurchaseCountry,
+          currentCountry: access.pppBlockedCountry,
+        }
+      : currentUserId
+        ? { kind: "not-enrolled" }
+        : { kind: "signed-out" };
+
+    return {
+      view: "locked" as const,
+      course: {
+        id: courseWithDetails.id,
+        title: courseWithDetails.title,
+        slug: courseWithDetails.slug,
+      },
+      curriculum,
+      module: { id: mod.id, title: mod.title },
+      lesson: { id: lesson.id, title: lesson.title },
+      enrolled: access.enrolled,
+      lockedReason,
+    };
+  }
+
   const enrolled = access.enrolled;
   let lessonStatus: string | null = null;
   let lastWatchPosition = 0;
@@ -708,28 +757,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  // PPP Access Guard — resolved by getAccess, which treats a blocked user as
-  // having no access to the course's content at all.
-  const { pppBlocked, pppBlockedCountry, pppPurchaseCountry, canViewContent } =
-    access;
-
-  // Comments are confidential to the course: only people who can read the
-  // lesson can read the discussion on it.
+  // Everything from here on is behind the can-view-content bar above:
+  // comments, Bookmarks and Notes are confidential to the course.
   const instructor = getUserById(course.instructorId);
-  const comments = canViewContent
-    ? await renderThread(getLessonThread(lessonId))
-    : [];
+  const comments = await renderThread(getLessonThread(lessonId));
 
-  // The Student's own Bookmark and Note on this lesson, behind the same
-  // content-access bar as the discussion. A signed-out visitor gets neither.
-  const bookmarked =
-    canViewContent && currentUserId
-      ? isBookmarked(db, currentUserId, lessonId)
-      : false;
-  const note =
-    canViewContent && currentUserId
-      ? getNote(db, currentUserId, lessonId)
-      : undefined;
+  // The Student's own Bookmark and Note on this lesson.
+  const bookmarked = currentUserId
+    ? isBookmarked(db, currentUserId, lessonId)
+    : false;
+  const note = currentUserId ? getNote(db, currentUserId, lessonId) : undefined;
 
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
@@ -789,19 +826,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   return {
+    view: "full" as const,
     course: {
       id: courseWithDetails.id,
       title: courseWithDetails.title,
       slug: courseWithDetails.slug,
     },
-    curriculum: courseWithDetails.modules.map((m) => ({
-      id: m.id,
-      title: m.title,
-      lessons: m.lessons.map((l) => ({
-        id: l.id,
-        title: l.title,
-      })),
-    })),
+    curriculum,
     module: {
       id: mod.id,
       title: mod.title,
@@ -818,11 +849,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     lastWatchPosition,
     watchProgress,
     lessonProgressMap,
-    pppBlocked,
-    pppBlockedCountry,
-    pppPurchaseCountry,
     comments,
-    canViewContent,
     canModerate: access.isStaff,
     instructorName: instructor?.name ?? "your instructor",
     bookmarked,
@@ -931,7 +958,12 @@ export async function action({ params, request }: Route.ActionArgs) {
     requireLessonInCourse(lessonId, course.id);
 
     if (intent === "toggle-bookmark") {
-      const bookmarked = toggleBookmark(db, currentUserId, lessonId, new Date());
+      const bookmarked = toggleBookmark(
+        db,
+        currentUserId,
+        lessonId,
+        new Date()
+      );
       return { ok: true, bookmarked };
     }
 
@@ -1012,7 +1044,143 @@ function useAutoplay() {
   return [enabled, toggle] as const;
 }
 
+type LessonLoaderData = Route.ComponentProps["loaderData"];
+
 export default function LessonViewer({ loaderData }: Route.ComponentProps) {
+  if (loaderData.view === "locked") {
+    return <LockedLesson data={loaderData} />;
+  }
+  return <FullLesson data={loaderData} />;
+}
+
+function LockedLesson({
+  data: { course, curriculum, module: mod, lesson, enrolled, lockedReason },
+}: {
+  data: Extract<LessonLoaderData, { view: "locked" }>;
+}) {
+  const purchasePath = `/courses/${course.slug}/purchase`;
+
+  return (
+    <div className="flex">
+      <CurriculumSidebar
+        course={course}
+        curriculum={curriculum}
+        currentLessonId={lesson.id}
+        lessonProgressMap={{}}
+        enrolled={enrolled}
+      />
+
+      <div className="flex-1 p-6 lg:p-8">
+        <LessonBreadcrumb
+          course={course}
+          mod={mod}
+          lessonTitle={lesson.title}
+        />
+
+        <div className="mx-auto max-w-4xl">
+          <h1 className="mb-6 text-3xl font-bold">{lesson.title}</h1>
+
+          <Card className="mb-8">
+            <CardContent className="py-10 text-center">
+              {lockedReason.kind === "country-lock" ? (
+                <>
+                  <ShieldAlert className="mx-auto mb-4 size-12 text-amber-500" />
+                  <h2 className="mb-3 text-xl font-semibold">
+                    Access Restricted
+                  </h2>
+                  <p className="mb-4 text-muted-foreground">
+                    You purchased this course with a Purchasing Power Parity
+                    discount while in{" "}
+                    <strong>
+                      {lockedReason.purchaseCountry
+                        ? countryName(lockedReason.purchaseCountry)
+                        : "your original country"}
+                    </strong>
+                    , but you're currently accessing from{" "}
+                    <strong>
+                      {lockedReason.currentCountry
+                        ? countryName(lockedReason.currentCountry)
+                        : "a different country"}
+                    </strong>
+                    .
+                  </p>
+                  <p className="mb-6 text-sm text-muted-foreground">
+                    PPP-discounted courses can only be accessed from the country
+                    where the purchase was made. This helps keep courses
+                    affordable for students in lower-income regions.
+                  </p>
+                  <Link to={`/courses/${course.slug}`}>
+                    <Button variant="outline">
+                      <MapPin className="mr-2 size-4" />
+                      Back to Course
+                    </Button>
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <h2 className="mb-3 text-xl font-semibold">
+                    Buy this course to watch this lesson
+                  </h2>
+                  <p className="mb-6 text-muted-foreground">
+                    This lesson is part of <strong>{course.title}</strong>.
+                    Enroll to get the full lesson, its video and every other
+                    lesson in the course.
+                  </p>
+                  <Link
+                    to={
+                      lockedReason.kind === "signed-out"
+                        ? `/signup?redirectTo=${encodeURIComponent(purchasePath)}`
+                        : purchasePath
+                    }
+                  >
+                    <Button size="lg">Buy the course</Button>
+                  </Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LessonBreadcrumb({
+  course,
+  mod,
+  lessonTitle,
+}: {
+  course: { title: string; slug: string };
+  mod: { id: number; title: string };
+  lessonTitle: string;
+}) {
+  return (
+    <nav className="mb-6 text-sm text-muted-foreground">
+      <Link to="/courses" className="hover:text-foreground">
+        Courses
+      </Link>
+      <span className="mx-2">/</span>
+      <Link to={`/courses/${course.slug}`} className="hover:text-foreground">
+        {course.title}
+      </Link>
+      <span className="mx-2">/</span>
+      <Link
+        to={`/courses/${course.slug}/${mod.id}`}
+        className="hover:text-foreground"
+      >
+        {mod.title}
+      </Link>
+      <span className="mx-2">/</span>
+      <span className="text-foreground">{lessonTitle}</span>
+    </nav>
+  );
+}
+
+function FullLesson({
+  data,
+}: {
+  data: Extract<LessonLoaderData, { view: "full" }>;
+}) {
   const {
     course,
     curriculum,
@@ -1029,16 +1197,12 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     lastWatchPosition,
     watchProgress,
     lessonProgressMap,
-    pppBlocked,
-    pppBlockedCountry,
-    pppPurchaseCountry,
     comments,
-    canViewContent,
     canModerate,
     instructorName,
     bookmarked,
     note,
-  } = loaderData;
+  } = data;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
   const quizFetcher = useFetcher({ key: `quiz-${lesson.id}` });
@@ -1063,44 +1227,6 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
   const quizResult = quizFetcher.data?.quizResult ?? null;
   const isSubmittingQuiz = quizFetcher.state !== "idle";
 
-  if (pppBlocked) {
-    const purchaseCountryName = pppPurchaseCountry
-      ? (COUNTRIES.find((c) => c.code === pppPurchaseCountry)?.name ??
-        pppPurchaseCountry)
-      : "your original country";
-    const currentCountryName = pppBlockedCountry
-      ? (COUNTRIES.find((c) => c.code === pppBlockedCountry)?.name ??
-        pppBlockedCountry)
-      : "a different country";
-
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <ShieldAlert className="mx-auto mb-4 size-16 text-amber-500" />
-          <h1 className="mb-3 text-2xl font-bold">Access Restricted</h1>
-          <p className="mb-4 text-muted-foreground">
-            You purchased this course with a Purchasing Power Parity discount
-            while in <strong>{purchaseCountryName}</strong>, but you're
-            currently accessing from <strong>{currentCountryName}</strong>.
-          </p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            PPP-discounted courses can only be accessed from the country where
-            the purchase was made. This helps keep courses affordable for
-            students in lower-income regions.
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            <Link to={`/courses/${course.slug}`}>
-              <Button variant="outline">
-                <MapPin className="mr-2 size-4" />
-                Back to Course
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex">
       {/* Curriculum Sidebar */}
@@ -1113,36 +1239,17 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
       />
 
       <div className="flex-1 p-6 lg:p-8">
-        {/* Breadcrumb */}
-        <nav className="mb-6 text-sm text-muted-foreground">
-          <Link to="/courses" className="hover:text-foreground">
-            Courses
-          </Link>
-          <span className="mx-2">/</span>
-          <Link
-            to={`/courses/${course.slug}`}
-            className="hover:text-foreground"
-          >
-            {course.title}
-          </Link>
-          <span className="mx-2">/</span>
-          <Link
-            to={`/courses/${course.slug}/${mod.id}`}
-            className="hover:text-foreground"
-          >
-            {mod.title}
-          </Link>
-          <span className="mx-2">/</span>
-          <span className="text-foreground">{lesson.title}</span>
-        </nav>
+        <LessonBreadcrumb
+          course={course}
+          mod={mod}
+          lessonTitle={lesson.title}
+        />
 
         <div className="mx-auto max-w-4xl">
           {/* Lesson Title */}
           <div className="mb-2 flex items-start justify-between gap-3">
             <h1 className="text-3xl font-bold">{lesson.title}</h1>
-            {canViewContent && currentUserId && (
-              <BookmarkToggle bookmarked={bookmarked} />
-            )}
+            {currentUserId && <BookmarkToggle bookmarked={bookmarked} />}
           </div>
           <div className="mb-6 flex items-center gap-3">
             {lesson.durationMinutes && (
@@ -1181,7 +1288,7 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
           )}
 
           {/* Note — under the video, so the Student can write while they watch */}
-          {canViewContent && currentUserId && <LessonNote note={note} />}
+          {currentUserId && <LessonNote note={note} />}
 
           {/* Lesson Content */}
           {contentHtml && (
@@ -1257,15 +1364,13 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
           )}
 
           {/* Questions & Discussion — confidential to people with access */}
-          {canViewContent && (
-            <CommentThread
-              comments={comments}
-              currentUserId={currentUserId}
-              canModerate={canModerate}
-              canPost
-              instructorName={instructorName}
-            />
-          )}
+          <CommentThread
+            comments={comments}
+            currentUserId={currentUserId}
+            canModerate={canModerate}
+            canPost
+            instructorName={instructorName}
+          />
 
           {/* Prev/Next Navigation */}
           <div className="flex items-center justify-between border-t pt-6">
