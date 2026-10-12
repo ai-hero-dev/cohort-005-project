@@ -3,7 +3,7 @@ import { Link, data, isRouteErrorResponse, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/instructor.questions";
-import { requireStaff } from "~/lib/access.server";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
 import { people } from "~/modules/permissions/person.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import { createComment } from "~/lib/comments.server";
@@ -104,21 +104,6 @@ function getCommentById(commentId: number) {
   return db.select().from(comments).where(eq(comments.id, commentId)).get();
 }
 
-function getCourseForLesson(lessonId: number) {
-  return db
-    .select({
-      courseId: courses.id,
-      courseTitle: courses.title,
-      courseSlug: courses.slug,
-      instructorId: courses.instructorId,
-    })
-    .from(lessons)
-    .innerJoin(modules, eq(lessons.moduleId, modules.id))
-    .innerJoin(courses, eq(modules.courseId, courses.id))
-    .where(eq(lessons.id, lessonId))
-    .get();
-}
-
 // A question sitting this long without an answer gets called out visually.
 const STALE_AFTER_DAYS = 3;
 
@@ -138,9 +123,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Platform Admins span every course; Instructors see only the courses
   // they own.
-  const questions = getUnansweredQuestions(
-    isPlatformAdmin ? null : person.id
-  );
+  const questions = getUnansweredQuestions(isPlatformAdmin ? null : person.id);
 
   const rendered = await Promise.all(
     questions.map(async (question) => ({
@@ -165,21 +148,17 @@ export async function action({ request }: Route.ActionArgs) {
     throw data("Question not found", { status: 404 });
   }
 
-  const course = getCourseForLesson(question.lessonId);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  // Answering as the course's voice — so it must be the course's own
-  // instructor, or an admin.
-  const { userId: authorId } = await requireStaff(request, course.courseId);
-  if (!authorId) {
-    throw data("Select a user from the DevUI panel.", { status: 401 });
-  }
+  // Answering as the course's voice, so it must be the course's owning
+  // Instructor or a Platform Admin: moderating its Discussions is "manage".
+  const { person } = await coursePermissions.requireCapability(
+    request,
+    "manage",
+    { lessonId: question.lessonId }
+  );
 
   const created = await createComment(
     db,
-    authorId,
+    person.id,
     question.lessonId,
     question.id,
     parsed.data.body,
