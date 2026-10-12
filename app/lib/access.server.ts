@@ -201,21 +201,3 @@ export async function requireStaff(
 
   return access;
 }
-
-/**
- * Throws unless the user is an instructor or an admin, without tying them to a
- * particular course — for pages that span all of someone's courses.
- */
-export async function requireInstructorOrAdmin(request: Request) {
-  const userId = await requireUserId(request);
-  const user = getUserById(userId);
-
-  if (
-    !user ||
-    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
-  ) {
-    throw data("Only instructors can access this page.", { status: 403 });
-  }
-
-  return { userId, user, isAdmin: user.role === UserRole.Admin };
-}

@@ -51,3 +51,18 @@ export async function requirePerson(db: Db, request: Request): Promise<Person> {
   if (!person) throw data(SIGNED_OUT_MESSAGE, { status: 401 });
   return person;
 }
+
+/** The 403 wording when only Instructors and Platform Admins may proceed. */
+export const INSTRUCTOR_OR_PLATFORM_ADMIN_MESSAGE =
+  "Only instructors and platform admins can do that.";
+
+export async function requireInstructorOrPlatformAdmin(
+  db: Db,
+  request: Request
+): Promise<Person> {
+  const person = await requirePerson(db, request);
+  if (person.role === "student") {
+    throw data(INSTRUCTOR_OR_PLATFORM_ADMIN_MESSAGE, { status: 403 });
+  }
+  return person;
+}
