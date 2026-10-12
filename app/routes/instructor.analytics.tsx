@@ -18,7 +18,7 @@ import {
   type QuizPassRate,
   type RefundExposure,
   type RevenueSeries,
-} from "~/lib/instructor-analytics.server";
+} from "~/modules/instructor-analytics";
 import { countryName } from "~/lib/ppp";
 import { REFUND_WINDOW_DAYS } from "~/lib/refund-rules";
 import { Button } from "~/components/ui/button";

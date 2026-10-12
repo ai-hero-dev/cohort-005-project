@@ -7,7 +7,7 @@ import { markdown } from "~/lib/text";
 import {
   getInstructorAnalytics,
   type AnalyticsViewer,
-} from "./instructor-analytics.server";
+} from "~/modules/instructor-analytics";
 
 // Noon UTC keeps every fixture on the same calendar day in local time and in
 // UTC, so the refund window (local days) and the chart (UTC days) agree.

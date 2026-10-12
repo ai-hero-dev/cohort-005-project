@@ -36,3 +36,37 @@ first time the code changes.
 Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
+
+## Import a module through its entry points, never into its subfolders
+
+Every directory under `app/modules/` is a deep module. Its **entry points**
+are its root files, and they are its whole public surface. Everything in a
+subfolder — `lib/`, `tests/`, anything else you add — is implementation, and is
+private.
+
+```ts
+import { getInstructorAnalytics } from "~/modules/instructor-analytics"; // yes
+import { getTopBuyers } from "~/modules/instructor-analytics/lib/overview"; // no
+```
+
+A module whose interface hides its implementation only hides it while nobody
+is allowed to reach past it. Give one caller a deep import and the
+implementation is now the interface, and you find that out the day you try to
+change it.
+
+Four things follow, and they are the ones people get wrong:
+
+- **A module's own tests go through the entry points too.** A test that imports
+  `lib/` is a test of the implementation, and it fails the next time the
+  implementation is correctly rewritten.
+- **Do not write a barrel.** An `index.ts` that re-exports the whole subtree has
+  an interface as wide as its implementation. Expose several small entry points
+  instead.
+- **Two modules that import each other are one module.** Cycles are an error.
+- **The route does not take the logic back.** Once a loader's work is in a
+  module, the route hands it the request and renders the answer. A new figure
+  goes in the module, not in a query beside the call.
+
+`npm run lint:boundaries` enforces all of this with dependency-cruiser. The
+rules are errors, not warnings. See
+[app/modules/README.md](./app/modules/README.md).
