@@ -50,7 +50,7 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
 
   // Correlated: matches a live reply to the outer question by its course's
   // owning Instructor or a Platform Admin.
-  const ownerOrAdminReply = db
+  const moderatorReply = db
     .select({ one: sql`1` })
     .from(reply)
     .innerJoin(replyAuthor, eq(replyAuthor.id, reply.userId))
@@ -72,7 +72,7 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
     // queue up as work for themselves.
     ne(author.role, UserRole.Admin),
     ne(comments.userId, courses.instructorId),
-    notExists(ownerOrAdminReply),
+    notExists(moderatorReply),
   ];
 
   if (instructorId !== null) {
