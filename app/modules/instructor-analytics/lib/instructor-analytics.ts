@@ -58,7 +58,7 @@ export type AnalyticsViewer = { userId: number; isAdmin: boolean };
 export type AnalyticsTab = "overview" | "course";
 
 /** A search param that should be a row id, or null if it isn't one. */
-function parseId(value: string | null): number | null {
+export function parseId(value: string | null): number | null {
   const id = Number(value);
   return value !== null && Number.isInteger(id) && id > 0 ? id : null;
 }
