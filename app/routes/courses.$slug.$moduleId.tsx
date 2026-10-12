@@ -28,12 +28,6 @@ import {
 } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { formatDuration } from "~/lib/utils";
-import { z } from "zod";
-
-const paramsSchema = z.object({
-  slug: z.string().min(1),
-  moduleId: z.coerce.number().int(),
-});
 
 function getCourseWithDetails(id: number) {
   const course = db
@@ -142,18 +136,12 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const parsed = paramsSchema.safeParse(params);
-  if (!parsed.success) {
-    throw data("Invalid parameters", { status: 400 });
-  }
-
-  const { slug, moduleId } = parsed.data;
-
   // Public page: signed-out visitors and people without an Enrollment still
-  // see it. Not found covers an unknown course and a module from another one.
+  // see it. Not found covers an unknown course, a malformed module id and a
+  // module from another course.
   const decisions = await coursePermissions.getCourseDecisions(request, {
-    slug,
-    moduleId,
+    slug: params.slug,
+    moduleId: params.moduleId,
   });
   if (!decisions.found) {
     throw data("Module not found", { status: 404 });
@@ -167,7 +155,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw data("Course not found", { status: 404 });
   }
 
-  const moduleWithLessons = getModuleWithLessons(moduleId);
+  const moduleWithLessons = getModuleWithLessons(Number(params.moduleId));
   if (!moduleWithLessons) {
     throw data("Module not found", { status: 404 });
   }

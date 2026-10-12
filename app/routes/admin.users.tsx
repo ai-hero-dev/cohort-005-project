@@ -90,7 +90,10 @@ export async function action({ request }: Route.ActionArgs) {
   const parsed = parseFormData(formData, adminUserActionSchema);
 
   if (!parsed.success) {
-    return data({ error: Object.values(parsed.errors)[0] ?? "Invalid input." }, { status: 400 });
+    return data(
+      { error: Object.values(parsed.errors)[0] ?? "Invalid input." },
+      { status: 400 }
+    );
   }
 
   const { intent } = parsed.data;
@@ -315,11 +318,21 @@ function EditableUserRow({
 function TableRowSkeleton() {
   return (
     <tr className="border-b border-border last:border-0">
-      <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-4 w-40" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-8 w-32" /></td>
-      <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
-      <td className="px-4 py-3"><Skeleton className="size-7" /></td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-28" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-40" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-8 w-32" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-24" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="size-7" />
+      </td>
     </tr>
   );
 }
@@ -338,11 +351,21 @@ export function HydrateFallback() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Role</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Created</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Name
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Role
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Created
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -438,10 +461,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
-      title = "Access denied";
-      message = typeof error.data === "string" ? error.data : "Only admins can access this page.";
+      title = "Not allowed";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Only Platform Admins can see this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;
