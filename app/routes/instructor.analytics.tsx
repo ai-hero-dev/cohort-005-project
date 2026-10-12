@@ -19,7 +19,7 @@ import {
   type RevenueSeries,
 } from "~/modules/instructor-analytics/index.server";
 import { countryName } from "~/lib/ppp";
-import { REFUND_WINDOW_DAYS } from "~/lib/refund-rules";
+import { REFUND_WINDOW_DAYS } from "~/modules/refund-window";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import {

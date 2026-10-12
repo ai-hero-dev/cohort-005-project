@@ -23,12 +23,16 @@ import {
   toNotificationPerson,
   type Notifications,
 } from "~/lib/notifications.server";
+import { clockAt } from "~/modules/clock";
 import {
-  REFUND_COMPLETION_LIMIT,
-  REFUND_WATCH_LIMIT_SECONDS,
-  REFUND_WINDOW_DAYS,
+  decideRefund,
+  findRuleBreaks,
+  type RefundFacts,
+  type RefundFigures,
+  type RefundRefusal,
   type RuleBreak,
-} from "~/lib/refund-rules";
+} from "~/modules/refund-policy";
+import { lastDayOfRefundWindow } from "~/modules/refund-window";
 
 // docs/adr/0001–0004 explain why Refunds work the way they do.
 
@@ -38,30 +42,6 @@ type Queryable = Db | Tx;
 
 type Purchase = typeof purchases.$inferSelect;
 type Seat = typeof coupons.$inferSelect;
-
-// ─── Calendar days ───
-
-// The fourteen-day window is counted in whole days, not hours — someone who
-// buys at 23:00 should still get the whole of their fourteenth day.
-export function calendarDay(when: Date): string {
-  const month = String(when.getMonth() + 1).padStart(2, "0");
-  const day = String(when.getDate()).padStart(2, "0");
-  return `${when.getFullYear()}-${month}-${day}`;
-}
-
-export function lastDayOfWindow(purchasedAtIso: string): string {
-  const deadline = new Date(purchasedAtIso);
-  deadline.setDate(deadline.getDate() + REFUND_WINDOW_DAYS);
-  return calendarDay(deadline);
-}
-
-function isWithinWindow(purchasedAtIso: string, on: Date): boolean {
-  const day = calendarDay(on);
-  return (
-    day >= calendarDay(new Date(purchasedAtIso)) &&
-    day <= lastDayOfWindow(purchasedAtIso)
-  );
-}
 
 // ─── Purchases and Seats ───
 
@@ -120,7 +100,7 @@ export function getSeatAvailability(
   return "available";
 }
 
-// ─── Figures and rules ───
+// ─── The facts the refund policy is asked about ───
 
 function getLessonIds(db: Queryable, courseId: number): number[] {
   return db
@@ -174,24 +154,6 @@ function getSecondsWatched(db: Queryable, userId: number, lessonIds: number[]) {
   return furthestPerLesson.reduce((total, row) => total + row.furthest, 0);
 }
 
-/**
- * How far the buyer has got with what they bought. For an Individual Purchase
- * that is their own progress. A Team Licence gives its buyer nothing to watch,
- * so for one it is how many of its Seats have been claimed.
- */
-export type RefundFigures =
-  | {
-      kind: "individual_purchase";
-      lessonsCompleted: number;
-      lessonCount: number;
-      secondsWatched: number;
-    }
-  | {
-      kind: "team_licence";
-      seatCount: number;
-      claimedSeatCount: number;
-    };
-
 function getRefundFigures(db: Queryable, purchase: Purchase): RefundFigures {
   const seats = getSeats(db, purchase.id);
 
@@ -212,50 +174,33 @@ function getRefundFigures(db: Queryable, purchase: Purchase): RefundFigures {
   };
 }
 
-/** What the buyer is told when they can't raise a Refund Request. */
-const RULE_BREAK_ERRORS: Record<RuleBreak, string> = {
-  window_closed: `The ${REFUND_WINDOW_DAYS}-day window has closed.`,
-  watched_too_much:
-    "You have watched too much of this course to get a refund.",
-  completed_too_much:
-    "You have completed too much of this course to request a refund.",
-  seat_claimed: "A Team Licence with a claimed Seat cannot be refunded.",
-};
-
-/**
- * The eligibility rules a Purchase breaks. `windowCheckedOn` is the day the
- * window is judged against: today when a buyer asks, and the day it was raised
- * when a Platform Admin looks at a Refund Request.
- */
-function findRuleBreaks(
+function getRefundFacts(
+  db: Queryable,
   purchase: Purchase,
-  figures: RefundFigures,
-  windowCheckedOn: Date
-): RuleBreak[] {
-  const breaks: RuleBreak[] = [];
-
-  if (!isWithinWindow(purchase.createdAt, windowCheckedOn)) {
-    breaks.push("window_closed");
-  }
-
-  if (figures.kind === "team_licence") {
-    if (figures.claimedSeatCount > 0) breaks.push("seat_claimed");
-    return breaks;
-  }
-
-  if (figures.secondsWatched >= REFUND_WATCH_LIMIT_SECONDS) {
-    breaks.push("watched_too_much");
-  }
-
-  if (
-    figures.lessonCount > 0 &&
-    figures.lessonsCompleted / figures.lessonCount >= REFUND_COMPLETION_LIMIT
-  ) {
-    breaks.push("completed_too_much");
-  }
-
-  return breaks;
+  figures: RefundFigures = getRefundFigures(db, purchase)
+): RefundFacts {
+  return {
+    purchasedAt: purchase.createdAt,
+    amountPaidCents: purchase.amountPaid,
+    figures,
+    existingRefunds: db
+      .select({ status: refunds.status })
+      .from(refunds)
+      .where(eq(refunds.purchaseId, purchase.id))
+      .all(),
+  };
 }
+
+// The policy says which condition refused; this says how that reaches the
+// browser.
+const REFUSAL_STATUS: Record<RefundRefusal, 403 | 409> = {
+  already_requested: 409,
+  already_refunded: 409,
+  window_closed: 403,
+  watched_too_much: 403,
+  completed_too_much: 403,
+  seat_claimed: 403,
+};
 
 // ─── Raising a Refund Request ───
 
@@ -265,7 +210,8 @@ type RefundCheck = { ok: true; purchase: Purchase } | Failure;
 
 /**
  * Whether this buyer may raise a Refund Request on this Purchase today. Only
- * the person who paid may, and only one Refund Request can be open at once.
+ * the person who paid may. Everything else is the refund policy's call, in
+ * `~/modules/refund-policy`.
  */
 export function checkRefundRequest(
   db: Queryable,
@@ -279,30 +225,14 @@ export function checkRefundRequest(
     return { ok: false, status: 404, error: "Purchase not found." };
   }
 
-  if (getRefundRequestWithStatus(db, purchase.id, RefundStatus.Open)) {
+  const decision = decideRefund(getRefundFacts(db, purchase), clockAt(now));
+
+  if (!decision.eligible) {
     return {
       ok: false,
-      status: 409,
-      error: "You already have an open refund request on this purchase.",
+      status: REFUSAL_STATUS[decision.refusedBy],
+      error: decision.message,
     };
-  }
-
-  if (getRefundRequestWithStatus(db, purchase.id, RefundStatus.Approved)) {
-    return {
-      ok: false,
-      status: 409,
-      error: "This purchase has already been refunded.",
-    };
-  }
-
-  const [firstBreak] = findRuleBreaks(
-    purchase,
-    getRefundFigures(db, purchase),
-    now
-  );
-
-  if (firstBreak) {
-    return { ok: false, status: 403, error: RULE_BREAK_ERRORS[firstBreak] };
   }
 
   return { ok: true, purchase };
@@ -344,7 +274,7 @@ export function getRefundOffer(
   return {
     purchaseId: individualPurchase.id,
     amount: individualPurchase.amountPaid,
-    lastDayInWindow: lastDayOfWindow(individualPurchase.createdAt),
+    lastDayInWindow: lastDayOfRefundWindow(individualPurchase.createdAt),
   };
 }
 
@@ -512,10 +442,10 @@ export function listRefundRequestsForReview(
 
   return rows.map((row) => {
     const figures = getRefundFigures(db, row.purchase);
+    // The window is judged on the day the request was raised, not today.
     const ruleBreaks = findRuleBreaks(
-      row.purchase,
-      figures,
-      new Date(row.requestedAt)
+      getRefundFacts(db, row.purchase, figures),
+      clockAt(new Date(row.requestedAt))
     );
     const msSincePurchase =
       now.getTime() - new Date(row.purchase.createdAt).getTime();
@@ -600,7 +530,7 @@ export function listTeamLicences(db: Queryable, buyerId: number, now: Date) {
         claimedSeatCount: seats.filter(isClaimed).length,
         latestRefundRequest: latestRefundRequest ?? null,
         canRequestRefund: checkRefundRequest(db, purchase.id, buyerId, now).ok,
-        lastDayInWindow: lastDayOfWindow(purchase.createdAt),
+        lastDayInWindow: lastDayOfRefundWindow(purchase.createdAt),
       },
     ];
   });

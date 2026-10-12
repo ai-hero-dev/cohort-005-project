@@ -20,7 +20,7 @@ import {
   listRefundRequestsForReview,
   type RefundRequestForReview,
 } from "~/lib/refunds.server";
-import { RULE_BREAK_LABELS } from "~/lib/refund-rules";
+import { RULE_BREAK_LABELS } from "~/modules/refund-policy";
 import { sendEmail } from "~/lib/mailer.server";
 import { defaultNotifications } from "~/lib/notifications.server";
 
