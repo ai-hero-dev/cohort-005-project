@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
+import { eq } from "drizzle-orm";
 import * as schema from "~/db/schema";
 import { enrollStudent, isEnrolled } from "./enrollments.server";
 import { approveRefundRequest, raiseRefundRequest } from "./refunds.server";
@@ -20,6 +21,11 @@ beforeEach(() => {
   db = createTestDb();
   base = seedBaseData(db);
   notifications = fakeNotifications();
+
+  db.update(schema.courses)
+    .set({ price: 4999, pppEnabled: true })
+    .where(eq(schema.courses.id, base.course.id))
+    .run();
 
   teamAdmin = db
     .insert(schema.users)
@@ -127,7 +133,14 @@ describe("claiming a Seat", () => {
   it("refuses a Seat whose Team Licence was refunded", async () => {
     const { purchase, seats } = buySeats(2);
     const platformAdmin = addStudent("Pat");
-    await approveRefundRequest(db, await raise(purchase.id), platformAdmin.id, null, NOW, fakeNotifications());
+    await approveRefundRequest(
+      db,
+      await raise(purchase.id),
+      platformAdmin.id,
+      null,
+      NOW,
+      fakeNotifications()
+    );
 
     expect(
       await claimSeat(db, seats[0].code, base.user.id, "GB", NOW, notifications)
@@ -169,11 +182,27 @@ describe("claiming a Seat", () => {
     ).toBe(true);
   });
 
-  it("refuses a Student in a different country from the Team Admin", async () => {
+  it("lets a Student in another country claim a Seat on a full-price Team Licence", async () => {
     const { seats } = buySeats(1, "GB");
 
+    const result = await claimSeat(
+      db,
+      seats[0].code,
+      base.user.id,
+      "IN",
+      NOW,
+      notifications
+    );
+
+    expect(result.ok).toBe(true);
+    expect(isEnrolled(db, base.user.id, base.course.id)).toBe(true);
+  });
+
+  it("refuses a Student in another country a Seat on a Team Licence bought at a Purchasing-Power Price", async () => {
+    const { seats } = buySeats(1, "IN");
+
     expect(
-      await claimSeat(db, seats[0].code, base.user.id, "IN", NOW, notifications)
+      await claimSeat(db, seats[0].code, base.user.id, "GB", NOW, notifications)
     ).toEqual({
       ok: false,
       error:
@@ -182,8 +211,40 @@ describe("claiming a Seat", () => {
     expect(isEnrolled(db, base.user.id, base.course.id)).toBe(false);
   });
 
+  it("lets a Student in the buying country claim a Seat on a Team Licence bought at a Purchasing-Power Price", async () => {
+    const { seats } = buySeats(1, "IN");
+
+    const result = await claimSeat(
+      db,
+      seats[0].code,
+      base.user.id,
+      "IN",
+      NOW,
+      notifications
+    );
+
+    expect(result.ok).toBe(true);
+    expect(isEnrolled(db, base.user.id, base.course.id)).toBe(true);
+  });
+
+  it("lets a Student whose country is unknown claim a Seat on a Team Licence bought at a Purchasing-Power Price", async () => {
+    const { seats } = buySeats(1, "IN");
+
+    const result = await claimSeat(
+      db,
+      seats[0].code,
+      base.user.id,
+      null,
+      NOW,
+      notifications
+    );
+
+    expect(result.ok).toBe(true);
+    expect(isEnrolled(db, base.user.id, base.course.id)).toBe(true);
+  });
+
   it("refuses an enrolled Student for that reason, before the country", async () => {
-    const { seats } = buySeats(1, "GB");
+    const { seats } = buySeats(1, "IN");
     await enrollStudent(
       db,
       base.user.id,
@@ -193,7 +254,7 @@ describe("claiming a Seat", () => {
     );
 
     expect(
-      await claimSeat(db, seats[0].code, base.user.id, "IN", NOW, notifications)
+      await claimSeat(db, seats[0].code, base.user.id, "GB", NOW, notifications)
     ).toEqual({
       ok: false,
       error: "You are already enrolled in this course",
@@ -335,9 +396,9 @@ describe("the new Enrollment Notification from a Seat claim", () => {
   });
 
   it("is not sent when the claim is refused", async () => {
-    const { seats } = buySeats(1, "GB");
+    const { seats } = buySeats(1, "IN");
 
-    await claimSeat(db, seats[0].code, base.user.id, "IN", NOW, notifications);
+    await claimSeat(db, seats[0].code, base.user.id, "GB", NOW, notifications);
 
     expect(sentOfKind("new-enrollment")).toEqual([]);
   });
@@ -360,7 +421,14 @@ function addStudent(name: string) {
 }
 
 async function raise(purchaseId: number) {
-  const result = await raiseRefundRequest(db, purchaseId, teamAdmin.id, "No.", NOW, fakeNotifications());
+  const result = await raiseRefundRequest(
+    db,
+    purchaseId,
+    teamAdmin.id,
+    "No.",
+    NOW,
+    fakeNotifications()
+  );
   if (!result.ok) throw new Error(result.error);
   return result.refundRequestId;
 }
