@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/courses.$slug.purchase";
-import { getCurrentUserId } from "~/lib/session";
+import { people } from "~/modules/permissions/person.server";
 import { db } from "~/db";
 import {
   courses,
@@ -240,12 +240,13 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     throw data("Course not found.", { status: 404 });
   }
 
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
+  const person = await people.getPerson(request);
+  if (!person) {
     throw redirect(
       `/signup?redirectTo=${encodeURIComponent(`/courses/${slug}/purchase`)}`
     );
   }
+  const currentUserId = person.id;
 
   const mode = url.searchParams.get("mode");
 
@@ -299,10 +300,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("Course not found.", { status: 404 });
   }
 
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
-    throw data("You must be logged in.", { status: 401 });
-  }
+  const { id: currentUserId } = await people.requirePerson(request);
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, purchaseActionSchema);
