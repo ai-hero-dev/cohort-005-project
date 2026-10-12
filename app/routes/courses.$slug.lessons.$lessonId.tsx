@@ -2,14 +2,27 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
-import { getCurrentUserId } from "~/lib/session";
-import { getAccess, requireContentAccess } from "~/lib/access.server";
+import {
+  coursePermissions,
+  type Capability,
+  type CourseRef,
+  type DenialReason,
+} from "~/modules/permissions/course-permissions.server";
 import { renderComment } from "~/lib/comment-markdown.server";
+import { markdown, type Markdown } from "~/lib/text";
+import {
+  createComment,
+  deleteComment,
+  editComment,
+} from "~/lib/comments.server";
+import { defaultNotifications } from "~/lib/notifications.server";
+import { isBookmarked, toggleBookmark } from "~/lib/bookmarks.server";
+import { getNote, saveNote } from "~/lib/notes.server";
+import { MAX_NOTE_LENGTH } from "~/lib/notes";
 import {
   CommentThread,
   type RenderedComment,
 } from "~/components/comment-thread";
-import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { db } from "~/db";
 import {
   categories,
@@ -31,6 +44,7 @@ import {
 import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
+import { Textarea } from "~/components/ui/textarea";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -39,8 +53,11 @@ import {
   ChevronRight,
   Circle,
   Clock,
+  Bookmark,
+  BookmarkCheck,
   Github,
   HelpCircle,
+  NotebookPen,
   MapPin,
   PlayCircle,
   ShieldAlert,
@@ -48,18 +65,13 @@ import {
   Trophy,
   RotateCcw,
 } from "lucide-react";
-import { cn, formatDuration } from "~/lib/utils";
+import { cn, formatDuration, formatRelativeTime } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
-import { COUNTRIES } from "~/lib/ppp";
-import { parseFormData, parseParams } from "~/lib/validation";
-
-const lessonParamsSchema = z.object({
-  slug: z.string().min(1),
-  lessonId: z.coerce.number().int(),
-});
+import { countryName } from "~/lib/ppp";
+import { parseFormData } from "~/lib/validation";
 
 const markCompleteSchema = z.object({
   intent: z.literal("mark-complete"),
@@ -77,6 +89,17 @@ const editCommentSchema = z.object({
   body: z.string(),
 });
 
+const saveNoteSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(1, "Write something before saving your note.")
+    .max(
+      MAX_NOTE_LENGTH,
+      `Your note is over ${MAX_NOTE_LENGTH.toLocaleString("en")} characters, so it was not saved.`
+    ),
+});
+
 const deleteCommentSchema = z.object({
   intent: z.literal("delete-comment"),
   commentId: z.coerce.number().int(),
@@ -87,22 +110,18 @@ type CommentAuthor = {
   name: string;
   avatarUrl: string | null;
   isInstructor: boolean;
-  isAdmin: boolean;
+  isPlatformAdmin: boolean;
 };
 
 type ThreadComment = {
   id: number;
-  body: string;
+  body: Markdown;
   createdAt: string;
   editedAt: string | null;
   deleted: boolean;
   author: CommentAuthor;
   replies: ThreadComment[];
 };
-
-function getCourseBySlug(slug: string) {
-  return db.select().from(courses).where(eq(courses.slug, slug)).get();
-}
 
 function getCourseWithDetails(id: number) {
   const course = db
@@ -168,6 +187,29 @@ function getLessonById(id: number) {
 function getModuleById(id: number) {
   return db.select().from(modules).where(eq(modules.id, id)).get();
 }
+
+/**
+ * The course named by this route's slug, through this lesson. A lesson in
+ * another course, or a malformed lesson id, counts as not found.
+ */
+function lessonRef(params: { slug: string; lessonId: string }): CourseRef {
+  return { slug: params.slug, lessonId: params.lessonId };
+}
+
+/**
+ * What each action intent needs: comments, Bookmarks and Notes need view;
+ * progress and quizzes need take. Moderating Discussions (deleting someone
+ * else's post) additionally needs manage, checked in the delete intent.
+ */
+const INTENT_CAPABILITY: Record<string, Capability | undefined> = {
+  "create-comment": "view",
+  "edit-comment": "view",
+  "delete-comment": "view",
+  "toggle-bookmark": "view",
+  "save-note": "view",
+  "mark-complete": "take",
+  "submit-quiz": "take",
+};
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -327,19 +369,6 @@ function getCommentById(commentId: number) {
   return db.select().from(comments).where(eq(comments.id, commentId)).get();
 }
 
-function assertValidBody(body: string) {
-  const trimmed = body.trim();
-  if (trimmed.length < MIN_COMMENT_LENGTH) {
-    throw new Error("Comment cannot be empty");
-  }
-  if (trimmed.length > MAX_COMMENT_LENGTH) {
-    throw new Error(
-      `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`
-    );
-  }
-  return trimmed;
-}
-
 function getLessonThread(lessonId: number): ThreadComment[] {
   const course = getCourseForLesson(lessonId);
   if (!course) return [];
@@ -367,7 +396,7 @@ function getLessonThread(lessonId: number): ThreadComment[] {
     const deleted = row.deletedAt !== null;
     return {
       id: row.id,
-      body: deleted ? "" : row.body,
+      body: deleted ? markdown("") : row.body,
       createdAt: row.createdAt,
       editedAt: deleted ? null : row.editedAt,
       deleted,
@@ -376,7 +405,7 @@ function getLessonThread(lessonId: number): ThreadComment[] {
         name: row.authorName,
         avatarUrl: row.authorAvatarUrl,
         isInstructor: row.authorId === course.instructorId,
-        isAdmin: row.authorRole === UserRole.Admin,
+        isPlatformAdmin: row.authorRole === UserRole.Admin,
       },
       replies: [],
     };
@@ -399,81 +428,6 @@ function getLessonThread(lessonId: number): ThreadComment[] {
 
   // A deleted question with no replies left has nothing worth showing.
   return topLevel.filter((c) => !c.deleted || c.replies.length > 0);
-}
-
-function createComment(
-  userId: number,
-  lessonId: number,
-  parentId: number | null,
-  body: string
-) {
-  const trimmed = assertValidBody(body);
-
-  const course = getCourseForLesson(lessonId);
-  if (!course) {
-    throw new Error("Lesson not found");
-  }
-
-  if (parentId !== null) {
-    const parent = getCommentById(parentId);
-    if (!parent) {
-      throw new Error("Parent comment not found");
-    }
-    if (parent.lessonId !== lessonId) {
-      throw new Error("Parent comment belongs to a different lesson");
-    }
-    if (parent.parentId !== null) {
-      throw new Error("Replies can only be one level deep");
-    }
-  }
-
-  return db
-    .insert(comments)
-    .values({ userId, lessonId, parentId, body: trimmed })
-    .returning()
-    .get();
-}
-
-function updateComment(commentId: number, userId: number, body: string) {
-  const trimmed = assertValidBody(body);
-
-  const existing = getCommentById(commentId);
-  if (!existing) {
-    throw new Error("Comment not found");
-  }
-  if (existing.deletedAt !== null) {
-    throw new Error("Comment has been deleted");
-  }
-  if (existing.userId !== userId) {
-    throw new Error("You can only edit your own comments");
-  }
-
-  return db
-    .update(comments)
-    .set({ body: trimmed, editedAt: new Date().toISOString() })
-    .where(eq(comments.id, commentId))
-    .returning()
-    .get();
-}
-
-function deleteComment(commentId: number, userId: number, isStaff: boolean) {
-  const existing = getCommentById(commentId);
-  if (!existing) {
-    throw new Error("Comment not found");
-  }
-  if (existing.userId !== userId && !isStaff) {
-    throw new Error("You can only delete your own comments");
-  }
-  if (existing.deletedAt !== null) {
-    return existing;
-  }
-
-  return db
-    .update(comments)
-    .set({ deletedAt: new Date().toISOString() })
-    .where(eq(comments.id, commentId))
-    .returning()
-    .get();
 }
 
 function getQuizByLessonId(lessonId: number) {
@@ -689,48 +643,66 @@ function flattenCourseLessons(course: {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const slug = params.slug;
-  const lessonId = Number(params.lessonId);
-
-  if (isNaN(lessonId)) {
-    throw data("Invalid lesson ID", { status: 400 });
-  }
-
-  const course = getCourseBySlug(slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const courseWithDetails = getCourseWithDetails(course.id);
-  if (!courseWithDetails) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const lesson = getLessonById(lessonId);
-  if (!lesson) {
+  // Not found covers an unknown course, a malformed lesson id, and a lesson
+  // from another course.
+  const decisions = await coursePermissions.getCourseDecisions(
+    request,
+    lessonRef(params)
+  );
+  if (!decisions.found) {
     throw data("Lesson not found", { status: 404 });
   }
 
-  const mod = getModuleById(lesson.moduleId);
-  if (!mod) {
-    throw data("Module not found", { status: 404 });
+  const { course, person, enrolled, view, take, manage } = decisions;
+  const currentUserId = person?.id ?? null;
+  const lessonId = Number(params.lessonId);
+
+  const courseWithDetails = getCourseWithDetails(course.id);
+  const lesson = getLessonById(lessonId);
+  const mod = lesson ? getModuleById(lesson.moduleId) : undefined;
+  if (!courseWithDetails || !lesson || !mod) {
+    throw data("Lesson not found", { status: 404 });
   }
 
-  // Verify lesson belongs to this course
-  if (mod.courseId !== course.id) {
-    throw data("Lesson not found in this course", { status: 404 });
+  const curriculum = courseWithDetails.modules.map((m) => ({
+    id: m.id,
+    title: m.title,
+    lessons: m.lessons.map((l) => ({
+      id: l.id,
+      title: l.title,
+    })),
+  }));
+
+  // Someone who can't view the content gets the lesson's title, its module and
+  // the course outline — never the body, video or quiz — plus the reason, so
+  // the page can show the right call to action.
+  if (!view.allowed) {
+    const lockedReason: DenialReason = view.reason;
+
+    return {
+      view: "locked" as const,
+      course: {
+        id: courseWithDetails.id,
+        title: courseWithDetails.title,
+        slug: courseWithDetails.slug,
+      },
+      curriculum,
+      module: { id: mod.id, title: mod.title },
+      lesson: { id: lesson.id, title: lesson.title },
+      enrolled,
+      lockedReason,
+    };
   }
 
-  const access = await getAccess(request, course.id);
-  const currentUserId = access.userId;
-  const enrolled = access.enrolled;
   let lessonStatus: string | null = null;
   let lastWatchPosition = 0;
   let watchProgress = 0;
   let lessonProgressMap: Record<number, string> = {};
 
   if (currentUserId) {
-    if (enrolled) {
+    // Progress is recorded only for people who can take the course, so a
+    // Student under a Country Lock gets none.
+    if (take.allowed) {
       // Mark lesson as in-progress when viewed
       markLessonInProgress(currentUserId, lessonId);
       const progress = getLessonProgress(currentUserId, lessonId);
@@ -760,17 +732,15 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  // PPP Access Guard — resolved by getAccess, which treats a blocked user as
-  // having no access to the course's content at all.
-  const { pppBlocked, pppBlockedCountry, pppPurchaseCountry, canViewContent } =
-    access;
-
-  // Comments are confidential to the course: only people who can read the
-  // lesson can read the discussion on it.
+  // Everything from here on is behind the can-view-content bar above:
+  // comments, Bookmarks and Notes are confidential to the course.
   const instructor = getUserById(course.instructorId);
-  const comments = canViewContent
-    ? await renderThread(getLessonThread(lessonId))
-    : [];
+  const comments = await renderThread(getLessonThread(lessonId));
+
+  const bookmarked = currentUserId
+    ? isBookmarked(db, currentUserId, lessonId)
+    : false;
+  const note = currentUserId ? getNote(db, currentUserId, lessonId) : undefined;
 
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
@@ -830,19 +800,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   return {
+    view: "full" as const,
     course: {
       id: courseWithDetails.id,
       title: courseWithDetails.title,
       slug: courseWithDetails.slug,
     },
-    curriculum: courseWithDetails.modules.map((m) => ({
-      id: m.id,
-      title: m.title,
-      lessons: m.lessons.map((l) => ({
-        id: l.id,
-        title: l.title,
-      })),
-    })),
+    curriculum,
     module: {
       id: mod.id,
       title: mod.title,
@@ -859,53 +823,56 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     lastWatchPosition,
     watchProgress,
     lessonProgressMap,
-    pppBlocked,
-    pppBlockedCountry,
-    pppPurchaseCountry,
     comments,
-    canViewContent,
-    canModerate: access.isStaff,
+    canModerate: manage.allowed,
     instructorName: instructor?.name ?? "your instructor",
+    bookmarked,
+    note: note ? { body: note.body, updatedAt: note.updatedAt } : null,
   };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
-  const { slug, lessonId } = parseParams(params, lessonParamsSchema);
-
-  const course = getCourseBySlug(slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
-    throw data("You must be logged in", { status: 401 });
-  }
-
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  // Comment intents re-check access here rather than relying on the loader —
-  // loader guards don't protect actions.
+  // Every intent checks its own capability here — loader guards don't protect
+  // actions. The ref includes the lesson, so a lesson from another course (or
+  // a malformed id) is a 404.
+  const capability =
+    typeof intent === "string" ? INTENT_CAPABILITY[intent] : undefined;
+  if (!capability) {
+    throw data("Invalid action", { status: 400 });
+  }
+  const ref = lessonRef(params);
+  const { person } = await coursePermissions.requireCapability(
+    request,
+    capability,
+    ref
+  );
+  const currentUserId = person.id;
+  const lessonId = Number(params.lessonId);
+
   if (
     intent === "create-comment" ||
     intent === "edit-comment" ||
     intent === "delete-comment"
   ) {
-    const access = await requireContentAccess(request, course.id);
-
     try {
       if (intent === "create-comment") {
         const parsed = parseFormData(formData, createCommentSchema);
         if (!parsed.success) {
           return { ok: false, error: "Enter a comment before posting." };
         }
-        createComment(
+        const created = await createComment(
+          db,
           currentUserId,
           lessonId,
           parsed.data.parentId ?? null,
-          parsed.data.body
+          parsed.data.body,
+          new Date(),
+          await defaultNotifications()
         );
+        if (!created.ok) return created;
         return { ok: true };
       }
 
@@ -920,7 +887,14 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!existing || existing.lessonId !== lessonId) {
           throw data("Comment not found", { status: 404 });
         }
-        updateComment(parsed.data.commentId, currentUserId, parsed.data.body);
+        const edited = editComment(
+          db,
+          parsed.data.commentId,
+          currentUserId,
+          parsed.data.body,
+          new Date()
+        );
+        if (!edited.ok) return edited;
         return { ok: true };
       }
 
@@ -932,7 +906,19 @@ export async function action({ params, request }: Route.ActionArgs) {
       if (!existing || existing.lessonId !== lessonId) {
         throw data("Comment not found", { status: 404 });
       }
-      deleteComment(parsed.data.commentId, currentUserId, access.isStaff);
+      // Anyone who can view may delete their own posts; moderating someone
+      // else's takes the manage capability.
+      const decisions = coursePermissions.decide(person, ref);
+      const canModerate = decisions.found && decisions.manage.allowed;
+      const deleted = await deleteComment(
+        db,
+        parsed.data.commentId,
+        currentUserId,
+        canModerate,
+        new Date(),
+        await defaultNotifications()
+      );
+      if (!deleted.ok) return deleted;
       return { ok: true };
     } catch (error) {
       // Service validation failures are user-correctable; anything thrown as a
@@ -944,6 +930,32 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
   }
 
+  if (intent === "toggle-bookmark" || intent === "save-note") {
+    if (intent === "toggle-bookmark") {
+      const bookmarked = toggleBookmark(
+        db,
+        currentUserId,
+        lessonId,
+        new Date()
+      );
+      return { ok: true, bookmarked };
+    }
+
+    const parsed = parseFormData(formData, saveNoteSchema);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.errors.body };
+    }
+    const saved = saveNote(
+      db,
+      currentUserId,
+      lessonId,
+      parsed.data.body,
+      new Date()
+    );
+    if (!saved.ok) return saved;
+    return { ok: true };
+  }
+
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
     return { success: true };
@@ -953,6 +965,12 @@ export async function action({ params, request }: Route.ActionArgs) {
     const quizId = Number(formData.get("quizId"));
     if (isNaN(quizId)) {
       throw data("Invalid quiz ID", { status: 400 });
+    }
+    // Scope the quiz to this lesson so a quiz elsewhere can't be reached by
+    // posting its id to this route.
+    const quiz = db.select().from(quizzes).where(eq(quizzes.id, quizId)).get();
+    if (!quiz || quiz.lessonId !== lessonId) {
+      throw data("Quiz not found", { status: 404 });
     }
 
     // Collect answers: form fields named "question-{questionId}" with value = optionId
@@ -1006,7 +1024,131 @@ function useAutoplay() {
   return [enabled, toggle] as const;
 }
 
+type LessonLoaderData = Route.ComponentProps["loaderData"];
+
 export default function LessonViewer({ loaderData }: Route.ComponentProps) {
+  if (loaderData.view === "locked") {
+    return <LockedLesson data={loaderData} />;
+  }
+  return <FullLesson data={loaderData} />;
+}
+
+function LockedLesson({
+  data: { course, curriculum, module: mod, lesson, enrolled, lockedReason },
+}: {
+  data: Extract<LessonLoaderData, { view: "locked" }>;
+}) {
+  const purchasePath = `/courses/${course.slug}/purchase`;
+
+  return (
+    <div className="flex">
+      <CurriculumSidebar
+        course={course}
+        curriculum={curriculum}
+        currentLessonId={lesson.id}
+        lessonProgressMap={{}}
+        enrolled={enrolled}
+      />
+
+      <div className="flex-1 p-6 lg:p-8">
+        <LessonBreadcrumb
+          course={course}
+          mod={mod}
+          lessonTitle={lesson.title}
+        />
+
+        <div className="mx-auto max-w-4xl">
+          <h1 className="mb-6 text-3xl font-bold">{lesson.title}</h1>
+
+          <Card className="mb-8">
+            <CardContent className="py-10 text-center">
+              {lockedReason.kind === "country-lock" ? (
+                <>
+                  <ShieldAlert className="mx-auto mb-4 size-12 text-amber-500" />
+                  <h2 className="mb-3 text-xl font-semibold">Country Lock</h2>
+                  <p className="mb-4 text-muted-foreground">
+                    You bought this course at a Purchasing-Power Price in{" "}
+                    <strong>{countryName(lockedReason.purchaseCountry)}</strong>
+                    , but you're currently in{" "}
+                    <strong>{countryName(lockedReason.currentCountry)}</strong>.
+                  </p>
+                  <p className="mb-6 text-sm text-muted-foreground">
+                    A course bought at a Purchasing-Power Price only works from
+                    the country it was bought in. This helps keep courses
+                    affordable for students in lower-income regions.
+                  </p>
+                  <Link to={`/courses/${course.slug}`}>
+                    <Button variant="outline">
+                      <MapPin className="mr-2 size-4" />
+                      Back to Course
+                    </Button>
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <h2 className="mb-3 text-xl font-semibold">
+                    Buy this course to watch this lesson
+                  </h2>
+                  <p className="mb-6 text-muted-foreground">
+                    This lesson is part of <strong>{course.title}</strong>.
+                    Enroll to get the full lesson, its video and every other
+                    lesson in the course.
+                  </p>
+                  <Link
+                    to={
+                      lockedReason.kind === "signed-out"
+                        ? `/signup?redirectTo=${encodeURIComponent(purchasePath)}`
+                        : purchasePath
+                    }
+                  >
+                    <Button size="lg">Buy the course</Button>
+                  </Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LessonBreadcrumb({
+  course,
+  mod,
+  lessonTitle,
+}: {
+  course: { title: string; slug: string };
+  mod: { id: number; title: string };
+  lessonTitle: string;
+}) {
+  return (
+    <nav className="mb-6 text-sm text-muted-foreground">
+      <Link to="/courses" className="hover:text-foreground">
+        Courses
+      </Link>
+      <span className="mx-2">/</span>
+      <Link to={`/courses/${course.slug}`} className="hover:text-foreground">
+        {course.title}
+      </Link>
+      <span className="mx-2">/</span>
+      <Link
+        to={`/courses/${course.slug}/${mod.id}`}
+        className="hover:text-foreground"
+      >
+        {mod.title}
+      </Link>
+      <span className="mx-2">/</span>
+      <span className="text-foreground">{lessonTitle}</span>
+    </nav>
+  );
+}
+
+function FullLesson({
+  data,
+}: {
+  data: Extract<LessonLoaderData, { view: "full" }>;
+}) {
   const {
     course,
     curriculum,
@@ -1023,14 +1165,12 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     lastWatchPosition,
     watchProgress,
     lessonProgressMap,
-    pppBlocked,
-    pppBlockedCountry,
-    pppPurchaseCountry,
     comments,
-    canViewContent,
     canModerate,
     instructorName,
-  } = loaderData;
+    bookmarked,
+    note,
+  } = data;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
   const quizFetcher = useFetcher({ key: `quiz-${lesson.id}` });
@@ -1055,44 +1195,6 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
   const quizResult = quizFetcher.data?.quizResult ?? null;
   const isSubmittingQuiz = quizFetcher.state !== "idle";
 
-  if (pppBlocked) {
-    const purchaseCountryName = pppPurchaseCountry
-      ? (COUNTRIES.find((c) => c.code === pppPurchaseCountry)?.name ??
-        pppPurchaseCountry)
-      : "your original country";
-    const currentCountryName = pppBlockedCountry
-      ? (COUNTRIES.find((c) => c.code === pppBlockedCountry)?.name ??
-        pppBlockedCountry)
-      : "a different country";
-
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <ShieldAlert className="mx-auto mb-4 size-16 text-amber-500" />
-          <h1 className="mb-3 text-2xl font-bold">Access Restricted</h1>
-          <p className="mb-4 text-muted-foreground">
-            You purchased this course with a Purchasing Power Parity discount
-            while in <strong>{purchaseCountryName}</strong>, but you're
-            currently accessing from <strong>{currentCountryName}</strong>.
-          </p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            PPP-discounted courses can only be accessed from the country where
-            the purchase was made. This helps keep courses affordable for
-            students in lower-income regions.
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            <Link to={`/courses/${course.slug}`}>
-              <Button variant="outline">
-                <MapPin className="mr-2 size-4" />
-                Back to Course
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex">
       {/* Curriculum Sidebar */}
@@ -1105,32 +1207,18 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
       />
 
       <div className="flex-1 p-6 lg:p-8">
-        {/* Breadcrumb */}
-        <nav className="mb-6 text-sm text-muted-foreground">
-          <Link to="/courses" className="hover:text-foreground">
-            Courses
-          </Link>
-          <span className="mx-2">/</span>
-          <Link
-            to={`/courses/${course.slug}`}
-            className="hover:text-foreground"
-          >
-            {course.title}
-          </Link>
-          <span className="mx-2">/</span>
-          <Link
-            to={`/courses/${course.slug}/${mod.id}`}
-            className="hover:text-foreground"
-          >
-            {mod.title}
-          </Link>
-          <span className="mx-2">/</span>
-          <span className="text-foreground">{lesson.title}</span>
-        </nav>
+        <LessonBreadcrumb
+          course={course}
+          mod={mod}
+          lessonTitle={lesson.title}
+        />
 
         <div className="mx-auto max-w-4xl">
           {/* Lesson Title */}
-          <h1 className="mb-2 text-3xl font-bold">{lesson.title}</h1>
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <h1 className="text-3xl font-bold">{lesson.title}</h1>
+            {currentUserId && <BookmarkToggle bookmarked={bookmarked} />}
+          </div>
           <div className="mb-6 flex items-center gap-3">
             {lesson.durationMinutes && (
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -1166,6 +1254,9 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
               onToggleAutoplay={toggleAutoplay}
             />
           )}
+
+          {/* Note — under the video, so the Student can write while they watch */}
+          {currentUserId && <LessonNote note={note} />}
 
           {/* Lesson Content */}
           {contentHtml && (
@@ -1241,15 +1332,13 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
           )}
 
           {/* Questions & Discussion — confidential to people with access */}
-          {canViewContent && (
-            <CommentThread
-              comments={comments}
-              currentUserId={currentUserId}
-              canModerate={canModerate}
-              canPost
-              instructorName={instructorName}
-            />
-          )}
+          <CommentThread
+            comments={comments}
+            currentUserId={currentUserId}
+            canModerate={canModerate}
+            canPost
+            instructorName={instructorName}
+          />
 
           {/* Prev/Next Navigation */}
           <div className="flex items-center justify-between border-t pt-6">
@@ -1301,6 +1390,71 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function BookmarkToggle({ bookmarked }: { bookmarked: boolean }) {
+  const fetcher = useFetcher<{ ok: boolean }>();
+  const isSaving = fetcher.state !== "idle";
+
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="toggle-bookmark" />
+      <Button type="submit" variant="outline" size="sm" disabled={isSaving}>
+        {bookmarked ? (
+          <BookmarkCheck className="mr-1.5 size-4" />
+        ) : (
+          <Bookmark className="mr-1.5 size-4" />
+        )}
+        {bookmarked ? "Bookmarked" : "Bookmark"}
+      </Button>
+    </fetcher.Form>
+  );
+}
+
+function LessonNote({
+  note,
+}: {
+  note: Route.ComponentProps["loaderData"]["note"];
+}) {
+  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
+  const isSaving = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  return (
+    <Card className="mb-8">
+      <CardContent className="space-y-3 pt-6">
+        <div className="flex items-center gap-2">
+          <NotebookPen className="size-4 text-muted-foreground" />
+          <h2 className="font-semibold">Your notes</h2>
+        </div>
+
+        <fetcher.Form method="post" className="space-y-3">
+          <input type="hidden" name="intent" value="save-note" />
+          <Textarea
+            name="body"
+            rows={6}
+            defaultValue={note?.body ?? ""}
+            placeholder="Only you can read this."
+            className="resize-y"
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" size="sm" disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+            {error && <span className="text-sm text-red-600">{error}</span>}
+            {!error && note && (
+              <span
+                suppressHydrationWarning
+                className="text-xs text-muted-foreground"
+              >
+                Last edited {formatRelativeTime(note.updatedAt)}
+              </span>
+            )}
+          </div>
+        </fetcher.Form>
+      </CardContent>
+    </Card>
   );
 }
 

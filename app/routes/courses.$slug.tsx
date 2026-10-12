@@ -3,7 +3,7 @@ import { Link, useFetcher, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/courses.$slug";
-import { getCurrentUserId } from "~/lib/session";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
 import { db } from "~/db";
 import {
   courses,
@@ -11,17 +11,12 @@ import {
   users,
   modules,
   lessons,
-  enrollments,
   lessonProgress,
   courseRatings,
-  purchases,
-  coupons,
-  refunds,
-  videoWatchEvents,
   LessonProgressStatus,
-  RefundStatus,
 } from "~/db/schema";
-import { eq, and, or, sql, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, or, sql } from "drizzle-orm";
+import { getRefundOffer, type RefundOffer } from "~/lib/refunds.server";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -40,6 +35,7 @@ import {
   Clock,
   Pencil,
   PlayCircle,
+  ShieldAlert,
   Users,
 } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
@@ -49,18 +45,10 @@ import { data, isRouteErrorResponse } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
-import {
-  calculatePppPrice,
-  getCountryTierInfo,
-  getDiscountForCountry,
-} from "~/lib/ppp";
+import { calculatePppPrice, countryName, getCountryTierInfo } from "~/lib/ppp";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
 import { StarRating, StarRatingInput } from "~/components/star-rating";
-
-function getCourseBySlug(slug: string) {
-  return db.select().from(courses).where(eq(courses.slug, slug)).get();
-}
 
 function getCourseWithDetails(id: number) {
   const course = db
@@ -135,17 +123,6 @@ function getLessonCountForCourse(courseId: number) {
     .get();
 
   return count?.count ?? 0;
-}
-
-function isUserEnrolled(userId: number, courseId: number) {
-  const enrollment = db
-    .select()
-    .from(enrollments)
-    .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
-    )
-    .get();
-  return !!enrollment;
 }
 
 function getCourseLessonIds(courseId: number): number[] {
@@ -307,7 +284,10 @@ function findRating(userId: number, courseId: number) {
     .select()
     .from(courseRatings)
     .where(
-      and(eq(courseRatings.userId, userId), eq(courseRatings.courseId, courseId))
+      and(
+        eq(courseRatings.userId, userId),
+        eq(courseRatings.courseId, courseId)
+      )
     )
     .get();
 }
@@ -367,133 +347,6 @@ function rateCourse(userId: number, courseId: number, rating: number) {
     .get();
 }
 
-const CANCEL_WINDOW_DAYS = 14;
-const CANCEL_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
-const CANCEL_COMPLETION_LIMIT = 0.5;
-
-function getPurchaseForCourse(userId: number, courseId: number) {
-  return db
-    .select()
-    .from(purchases)
-    .where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId)))
-    .orderBy(sql`${purchases.createdAt} desc`)
-    .get();
-}
-
-function getRequestedRefund(purchaseId: number) {
-  return db
-    .select({ id: refunds.id })
-    .from(refunds)
-    .where(
-      and(
-        eq(refunds.purchaseId, purchaseId),
-        eq(refunds.status, RefundStatus.Requested)
-      )
-    )
-    .get();
-}
-
-function getCompletedLessonCount(userId: number, lessonIds: number[]) {
-  if (lessonIds.length === 0) return 0;
-
-  const result = db
-    .select({ count: sql<number>`count(*)` })
-    .from(lessonProgress)
-    .where(
-      and(
-        eq(lessonProgress.userId, userId),
-        eq(lessonProgress.status, LessonProgressStatus.Completed),
-        inArray(lessonProgress.lessonId, lessonIds)
-      )
-    )
-    .get();
-
-  return result?.count ?? 0;
-}
-
-function getSecondsWatched(userId: number, lessonIds: number[]) {
-  if (lessonIds.length === 0) return 0;
-
-  const furthestPerLesson = db
-    .select({
-      furthest: sql<number>`max(${videoWatchEvents.positionSeconds})`,
-    })
-    .from(videoWatchEvents)
-    .where(
-      and(
-        eq(videoWatchEvents.userId, userId),
-        inArray(videoWatchEvents.lessonId, lessonIds)
-      )
-    )
-    .groupBy(videoWatchEvents.lessonId)
-    .all();
-
-  return furthestPerLesson.reduce((total, row) => total + row.furthest, 0);
-}
-
-// Compare whole days, not hours — a purchase at 23:00 should still get its
-// full fourteenth day.
-function asDayString(when: Date) {
-  const year = when.getFullYear();
-  const month = String(when.getMonth() + 1).padStart(2, "0");
-  const day = String(when.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * What the learner is offered if they want their money back, or null if this
- * purchase cannot be cancelled.
- */
-function getCancellationOffer(
-  userId: number,
-  course: { id: number; price: number }
-) {
-  const purchase = getPurchaseForCourse(userId, course.id);
-
-  if (!purchase) return null;
-  if (getRequestedRefund(purchase.id)) return null;
-
-  const purchasedDay = asDayString(new Date(purchase.createdAt));
-  const windowEnd = new Date(purchase.createdAt);
-  windowEnd.setDate(windowEnd.getDate() + CANCEL_WINDOW_DAYS);
-  const lastDayInWindow = asDayString(windowEnd);
-  const todayDay = asDayString(new Date());
-  const isWithinWindow =
-    todayDay >= purchasedDay && todayDay <= lastDayInWindow;
-
-  if (!isWithinWindow) return null;
-
-  const lessonIds = getCourseLessonIds(course.id);
-
-  if (lessonIds.length > 0) {
-    const completedCount = getCompletedLessonCount(userId, lessonIds);
-    if (completedCount / lessonIds.length >= CANCEL_COMPLETION_LIMIT) {
-      return null;
-    }
-  }
-
-  if (getSecondsWatched(userId, lessonIds) >= CANCEL_WATCH_LIMIT_SECONDS) {
-    return null;
-  }
-
-  const claimedSeat = db
-    .select({ id: coupons.id })
-    .from(coupons)
-    .where(
-      and(eq(coupons.purchaseId, purchase.id), isNotNull(coupons.redeemedAt))
-    )
-    .get();
-
-  if (claimedSeat) return null;
-
-  // A purchasing-power price is given back at the price that was paid, not at
-  // the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const amount = pppDiscount > 0 ? purchase.amountPaid : course.price;
-
-  return { amount, lastDayInWindow };
-}
-
 const ratingSchema = z.object({
   rating: z.coerce.number().int().min(MIN_RATING).max(MAX_RATING),
 });
@@ -507,12 +360,20 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const slug = params.slug;
-  const course = getCourseBySlug(slug);
-
-  if (!course) {
+  // Public page: signed-out visitors and people without an Enrollment still
+  // see it.
+  const decisions = await coursePermissions.getCourseDecisions(request, {
+    slug: params.slug,
+  });
+  if (!decisions.found) {
     throw data("Course not found", { status: 404 });
   }
+  const { course, person, enrolled, view, take } = decisions;
+  const currentUserId = person?.id ?? null;
+  const canView = view.allowed;
+  const canTake = take.allowed;
+  const countryLock =
+    !take.allowed && take.reason.kind === "country-lock" ? take.reason : null;
 
   const courseWithDetails = getCourseWithDetails(course.id);
   if (!courseWithDetails) {
@@ -520,36 +381,27 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const lessonCount = getLessonCountForCourse(course.id);
-  const currentUserId = await getCurrentUserId(request);
 
-  let enrolled = false;
   let progress = 0;
-  let lessonProgressMap: Record<number, string> = {};
+  const lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
-  let cancellation: { amount: number; lastDayInWindow: string } | null = null;
+  let refundOffer: RefundOffer | null = null;
 
-  if (currentUserId) {
-    enrolled = isUserEnrolled(currentUserId, course.id);
+  if (person && enrolled) {
+    refundOffer = getRefundOffer(db, person.id, course.id, new Date());
+  }
 
-    if (enrolled) {
-      cancellation = getCancellationOffer(currentUserId, {
-        id: course.id,
-        price: courseWithDetails.price,
-      });
+  // Progress is shown only to someone who can take the course.
+  if (person && canTake) {
+    progress = calculateProgress(person.id, course.id, false);
 
-      progress = calculateProgress(currentUserId, course.id, false);
-
-      const progressRecords = getLessonProgressForCourse(
-        currentUserId,
-        course.id
-      );
-      for (const record of progressRecords) {
-        lessonProgressMap[record.lessonId] = record.status;
-      }
-
-      const nextLesson = getNextIncompleteLesson(currentUserId, course.id);
-      nextLessonId = nextLesson?.id ?? null;
+    const progressRecords = getLessonProgressForCourse(person.id, course.id);
+    for (const record of progressRecords) {
+      lessonProgressMap[record.lessonId] = record.status;
     }
+
+    const nextLesson = getNextIncompleteLesson(person.id, course.id);
+    nextLessonId = nextLesson?.id ?? null;
   }
 
   // Render sales copy from Markdown to HTML server-side
@@ -571,6 +423,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     salesCopyHtml,
     lessonCount,
     enrolled,
+    canView,
+    canTake,
+    countryLock,
     progress,
     lessonProgressMap,
     nextLessonId,
@@ -579,29 +434,19 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundOffer,
   };
 }
 
 // Enrollment is handled via the purchase confirmation page — this action only
 // records star ratings.
 export async function action({ params, request }: Route.ActionArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("You must be logged in to rate a course.", { status: 401 });
-  }
-
-  const course = getCourseBySlug(params.slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  if (!isUserEnrolled(currentUserId, course.id)) {
-    throw data("You must be enrolled in this course to rate it.", {
-      status: 403,
-    });
-  }
+  // Rating needs "take", so a Student under Country Lock can't rate.
+  const { person, course } = await coursePermissions.requireCapability(
+    request,
+    "take",
+    { slug: params.slug }
+  );
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, ratingSchema);
@@ -610,7 +455,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { ok: false as const, error: "Please choose a rating from 1 to 5." };
   }
 
-  rateCourse(currentUserId, course.id, parsed.data.rating);
+  rateCourse(person.id, course.id, parsed.data.rating);
 
   return { ok: true as const, error: null };
 }
@@ -672,6 +517,9 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     salesCopyHtml,
     lessonCount,
     enrolled,
+    canView,
+    canTake,
+    countryLock,
     progress,
     lessonProgressMap,
     nextLessonId,
@@ -680,7 +528,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundOffer,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -854,7 +702,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
           <div className="mt-8">
             <CourseContent
               course={course}
-              enrolled={enrolled}
+              canView={canView}
               isInstructor={isInstructor}
               lessonProgressMap={lessonProgressMap}
             />
@@ -883,43 +731,64 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                 </Link>
               ) : enrolled ? (
                 <>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span>{progress}% complete</span>
-                  </div>
-                  <div className="mb-4 h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  {course.modules.length > 0 &&
-                    (() => {
-                      const targetLessonId =
-                        nextLessonId ?? course.modules[0].lessons[0]?.id;
-                      return targetLessonId ? (
-                        <Link
-                          to={`/courses/${course.slug}/lessons/${targetLessonId}`}
-                        >
-                          <Button className="w-full">
-                            <PlayCircle className="mr-2 size-4" />
-                            {progress > 0
-                              ? "Continue Learning"
-                              : "Start Course"}
-                          </Button>
-                        </Link>
-                      ) : null;
-                    })()}
+                  {countryLock && (
+                    <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                      <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                      <p>
+                        You bought this course at a Purchasing-Power Price in{" "}
+                        <strong>
+                          {countryName(countryLock.purchaseCountry)}
+                        </strong>
+                        , so it can&apos;t be used from{" "}
+                        <strong>
+                          {countryName(countryLock.currentCountry)}
+                        </strong>
+                        .
+                      </p>
+                    </div>
+                  )}
+                  {canTake && (
+                    <>
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span>{progress}% complete</span>
+                      </div>
+                      <div className="mb-4 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      {course.modules.length > 0 &&
+                        (() => {
+                          const targetLessonId =
+                            nextLessonId ?? course.modules[0].lessons[0]?.id;
+                          return targetLessonId ? (
+                            <Link
+                              to={`/courses/${course.slug}/lessons/${targetLessonId}`}
+                            >
+                              <Button className="w-full">
+                                <PlayCircle className="mr-2 size-4" />
+                                {progress > 0
+                                  ? "Continue Learning"
+                                  : "Start Course"}
+                              </Button>
+                            </Link>
+                          ) : null;
+                        })()}
+                    </>
+                  )}
                   <Link to={teamPurchaseLink}>
                     <Button variant="outline" className="w-full">
                       <Users className="mr-2 size-4" />
                       Buy More Seats
                     </Button>
                   </Link>
-                  <RateCourse userRating={userRating} />
-                  {cancellation && (
-                    <CancelPurchase
+                  {canTake && <RateCourse userRating={userRating} />}
+                  {refundOffer && (
+                    <RequestRefund
                       slug={course.slug}
-                      amount={cancellation.amount}
+                      purchaseId={refundOffer.purchaseId}
+                      amount={refundOffer.amount}
                     />
                   )}
                 </>
@@ -993,7 +862,15 @@ function RateCourse({ userRating }: { userRating: number | null }) {
   );
 }
 
-function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
+function RequestRefund({
+  slug,
+  purchaseId,
+  amount,
+}: {
+  slug: string;
+  purchaseId: number;
+  amount: number;
+}) {
   const fetcher = useFetcher<{ errors?: Record<string, string> }>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const isSubmitting = fetcher.state !== "idle";
@@ -1014,7 +891,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
           className="w-full text-muted-foreground"
           onClick={() => setIsFormOpen(true)}
         >
-          Cancel my purchase
+          Request a refund
         </Button>
       </div>
     );
@@ -1022,7 +899,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
 
   return (
     <div className="border-t pt-4">
-      <p className="mb-2 text-sm font-medium">Cancel my purchase</p>
+      <p className="mb-2 text-sm font-medium">Request a refund</p>
       <p className="mb-3 text-xs text-muted-foreground">
         We will send {formatPrice(amount)} back to the card you paid with, once
         someone has read your note.
@@ -1032,6 +909,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
         action={`/courses/${slug}/refund`}
         className="space-y-2"
       >
+        <input type="hidden" name="purchaseId" value={purchaseId} />
         <Textarea
           name="reason"
           rows={3}
@@ -1040,7 +918,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
         />
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={isSubmitting}>
-            {isSubmitting ? "Sending..." : "Cancel my purchase"}
+            {isSubmitting ? "Sending..." : "Request a refund"}
           </Button>
           <Button
             type="button"
@@ -1058,7 +936,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
 
 function CourseContent({
   course,
-  enrolled,
+  canView,
   isInstructor,
   lessonProgressMap,
 }: {
@@ -1075,7 +953,7 @@ function CourseContent({
       }>;
     }>;
   };
-  enrolled: boolean;
+  canView: boolean;
   isInstructor: boolean;
   lessonProgressMap: Record<number, string>;
 }) {
@@ -1139,7 +1017,7 @@ function CourseContent({
 
                     return (
                       <li key={lesson.id}>
-                        {enrolled ? (
+                        {canView ? (
                           <Link
                             to={`/courses/${course.slug}/lessons/${lesson.id}`}
                             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-muted"

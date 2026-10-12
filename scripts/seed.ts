@@ -10,13 +10,22 @@ import {
   UserRole,
   CourseStatus,
   LessonProgressStatus,
+  RefundStatus,
   QuestionType,
   TeamMemberRole,
 } from "../app/db/schema";
+import { existsSync } from "fs";
+import { defaultNotifications } from "../app/lib/notifications.server";
+import { syncAllUsers } from "../app/lib/notification-preferences.server";
+import { markdown } from "../app/lib/text";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsFolder = path.resolve(__dirname, "../drizzle");
+
+// Runs under tsx, not Vite, so load .env for the Knock keys ourselves.
+const envFile = path.resolve(__dirname, "../.env");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -64,6 +73,8 @@ async function seed() {
 
   // Drop and recreate tables for a clean seed
   sqlite.exec(`
+    DROP TABLE IF EXISTS bookmarks;
+    DROP TABLE IF EXISTS notes;
     DROP TABLE IF EXISTS comments;
     DROP TABLE IF EXISTS course_ratings;
     DROP TABLE IF EXISTS video_watch_events;
@@ -76,6 +87,7 @@ async function seed() {
     DROP TABLE IF EXISTS coupons;
     DROP TABLE IF EXISTS team_members;
     DROP TABLE IF EXISTS teams;
+    DROP TABLE IF EXISTS refunds;
     DROP TABLE IF EXISTS purchases;
     DROP TABLE IF EXISTS enrollments;
     DROP TABLE IF EXISTS lessons;
@@ -189,7 +201,7 @@ async function seed() {
       },
       {
         name: "Liam Thompson",
-        email: "liam.thompson@student.dev",
+        email: "liam@example.com",
         role: UserRole.Student,
         avatarUrl: "https://api.dicebear.com/9.x/avataaars/svg?seed=liam",
         createdAt: daysAgo(30),
@@ -326,7 +338,7 @@ async function seed() {
           .values({
             moduleId: mod.id,
             title: lessonData.title,
-            content: lessonData.content ?? null,
+            content: lessonData.content ? markdown(lessonData.content) : null,
             videoUrl: lessonData.videoUrl ?? null,
             githubRepoUrl: lessonData.githubRepoUrl ?? null,
             position: li + 1,
@@ -351,7 +363,7 @@ async function seed() {
       slug: "introduction-to-typescript",
       description:
         "Master TypeScript from the ground up. Learn type annotations, interfaces, generics, and advanced patterns that will make your JavaScript code safer and more maintainable. Includes hands-on projects and real-world examples.",
-      salesCopy: `## Why TypeScript?
+      salesCopy: markdown(`## Why TypeScript?
 
 If you've been writing JavaScript and wondering why your code breaks in production with cryptic "undefined is not a function" errors, TypeScript is the answer you've been looking for.
 
@@ -380,12 +392,12 @@ No prior TypeScript experience required — just a solid understanding of JavaSc
 
 Unlike courses that just show you syntax, this course focuses on *thinking in types*. You'll learn to design your types first and let them guide your implementation, catching entire categories of bugs at compile time instead of runtime.
 
-By the end of this course, you'll understand why TypeScript has become the default choice for serious JavaScript development.`,
+By the end of this course, you'll understand why TypeScript has become the default choice for serious JavaScript development.`),
       instructorId: instructor1.id,
       categoryId: catBySlug["programming"].id,
       status: CourseStatus.Published,
       coverImageUrl: "/images/course-typescript.svg",
-      price: 4999,
+      price: 7900,
       createdAt: daysAgo(355),
       updatedAt: daysAgo(10),
     })
@@ -772,7 +784,7 @@ Practice by converting an existing JavaScript project to TypeScript. Start with 
       slug: "building-rest-apis-with-nodejs",
       description:
         "Learn to build production-ready REST APIs using Node.js and Express. Covers routing, middleware, authentication, database integration, error handling, testing, and deployment best practices.",
-      salesCopy: `## Build APIs That Actually Work in Production
+      salesCopy: markdown(`## Build APIs That Actually Work in Production
 
 Most API tutorials teach you how to return JSON from an endpoint. This course teaches you how to build APIs that handle real traffic, real users, and real problems — the kind you'll face on the job.
 
@@ -806,7 +818,7 @@ Express is the most widely-used Node.js web framework for a reason — it's mini
 
 ## 20 Lessons, 5 Modules, Zero Fluff
 
-Every lesson is focused and practical. No 45-minute lectures where 40 minutes are filler. Each lesson teaches one concept, shows you how to implement it, and moves on.`,
+Every lesson is focused and practical. No 45-minute lectures where 40 minutes are filler. Each lesson teaches one concept, shows you how to implement it, and moves on.`),
       instructorId: instructor2.id,
       categoryId: catBySlug["programming"].id,
       status: CourseStatus.Published,
@@ -1240,7 +1252,7 @@ You've completed the Building REST APIs course. You now have the skills to build
       slug: "design-systems-with-tailwind",
       description:
         "Build a design system that survives contact with a real product team. Tokens, component APIs, theming, and the discipline that keeps a system from rotting into a component graveyard.",
-      salesCopy: `## Design Systems That Survive
+      salesCopy: markdown(`## Design Systems That Survive
 
 Most design systems die the same way: a beautiful component library nobody uses, drifting out of sync with the product it was meant to serve.
 
@@ -1255,7 +1267,7 @@ This course is about the other kind — the system your team reaches for because
 
 ## Who Is This For?
 
-Frontend developers who have built components before and watched the collection turn into a mess. Tailwind experience helps but is not required.`,
+Frontend developers who have built components before and watched the collection turn into a mess. Tailwind experience helps but is not required.`),
       instructorId: instructor1.id,
       categoryId: catBySlug["design"].id,
       status: CourseStatus.Published,
@@ -1368,7 +1380,7 @@ Frontend developers who have built components before and watched the collection 
       slug: "practical-data-visualisation",
       description:
         "Turn data into charts people can actually read. Chart selection, scales, colour, and the accessibility rules most dashboards break.",
-      salesCopy: `## Charts People Can Read
+      salesCopy: markdown(`## Charts People Can Read
 
 A chart is an argument. This course is about making the argument clearly — picking the right encoding, scaling it honestly, and colouring it so everyone can read it.
 
@@ -1381,7 +1393,7 @@ A chart is an argument. This course is about making the argument clearly — pic
 
 ## Who Is This For?
 
-Developers and analysts who produce charts for other people to act on.`,
+Developers and analysts who produce charts for other people to act on.`),
       instructorId: instructor2.id,
       categoryId: catBySlug["data-science"].id,
       status: CourseStatus.Published,
@@ -1466,7 +1478,7 @@ Developers and analysts who produce charts for other people to act on.`,
       slug: "shipping-with-docker-and-kubernetes",
       description:
         "Containerise an application and run it on Kubernetes without cargo-culting a YAML file you do not understand.",
-      salesCopy: `## From Laptop to Cluster
+      salesCopy: markdown(`## From Laptop to Cluster
 
 Containers made deployment reproducible and Kubernetes made it configurable. This course covers both without pretending either is simple.
 
@@ -1479,7 +1491,7 @@ Containers made deployment reproducible and Kubernetes made it configurable. Thi
 
 ## Status
 
-This course is still in draft while the cluster examples are rewritten against the current API.`,
+This course is still in draft while the cluster examples are rewritten against the current API.`),
       instructorId: instructor2.id,
       categoryId: catBySlug["devops"].id,
       status: CourseStatus.Draft,
@@ -1867,8 +1879,14 @@ This course is still in draft while the cluster examples are rewritten against t
   // deleted question kept as a tombstone because it has a reply.
   // Only enrolled students comment.
 
-  function comment(values: typeof schema.comments.$inferInsert) {
-    const [row] = db.insert(schema.comments).values(values).returning().all();
+  function comment(
+    values: Omit<typeof schema.comments.$inferInsert, "body"> & { body: string }
+  ) {
+    const [row] = db
+      .insert(schema.comments)
+      .values({ ...values, body: markdown(values.body) })
+      .returning()
+      .all();
     return row;
   }
 
@@ -2228,7 +2246,7 @@ This course is still in draft while the cluster examples are rewritten against t
     .values({
       userId: students[0].id, // Emma — bought course 1 individually
       courseId: course1.id,
-      amountPaid: 4999,
+      amountPaid: 7900,
       country: "US",
       createdAt: daysAgo(50),
     })
@@ -2259,7 +2277,7 @@ This course is still in draft while the cluster examples are rewritten against t
     .values({
       userId: students[2].id, // Olivia — bought course 1 individually
       courseId: course1.id,
-      amountPaid: 4999,
+      amountPaid: 7900,
       country: "US",
       createdAt: daysAgo(35),
     })
@@ -2269,7 +2287,7 @@ This course is still in draft while the cluster examples are rewritten against t
     .values({
       userId: students[4].id, // Sophia — bought course 1 individually
       courseId: course1.id,
-      amountPaid: 4999,
+      amountPaid: 7900,
       country: "US",
       createdAt: daysAgo(15),
     })
@@ -2345,7 +2363,7 @@ This course is still in draft while the cluster examples are rewritten against t
 
   db.update(schema.coupons)
     .set({
-      redeemedByUserId: studentByEmail("liam.thompson@student.dev").id,
+      redeemedByUserId: studentByEmail("liam@example.com").id,
       redeemedAt: daysAgo(25),
     })
     .where(eq(schema.coupons.id, seededCoupons[1].id))
@@ -2713,7 +2731,7 @@ This course is still in draft while the cluster examples are rewritten against t
   );
 
   // Four seats on Design Systems, bought during launch week, none redeemed yet.
-  createTeamPurchase(
+  const novakLicence = createTeamPurchase(
     "marta.novak@student.dev",
     course3,
     4,
@@ -2721,6 +2739,80 @@ This course is still in draft while the cluster examples are rewritten against t
     4,
     []
   );
+
+  // ─── Liam's Refund Request ───
+  // One learner with an Open Refund Request. The dates count back from
+  // today, so the fourteen-day refund window is still open whenever you seed.
+
+  const liam = studentByEmail("liam@example.com");
+  const [liamPurchase] = db
+    .insert(schema.purchases)
+    .values({
+      userId: liam.id,
+      courseId: course1.id,
+      amountPaid: 7900,
+      country: null,
+      createdAt: daysAgo(9),
+    })
+    .returning()
+    .all();
+  db.insert(schema.enrollments)
+    .values({
+      userId: liam.id,
+      courseId: course1.id,
+      enrolledAt: daysAgo(9),
+    })
+    .run();
+  db.insert(schema.lessonProgress)
+    .values([
+      ...course1LessonIds.slice(0, 3).map((lessonId, i) => ({
+        userId: liam.id,
+        lessonId,
+        status: LessonProgressStatus.Completed,
+        completedAt: daysAgo(8 - i),
+      })),
+      {
+        userId: liam.id,
+        lessonId: course1LessonIds[3],
+        status: LessonProgressStatus.InProgress,
+        completedAt: null,
+      },
+    ])
+    .run();
+  db.insert(schema.courseRatings)
+    .values({
+      userId: liam.id,
+      courseId: course1.id,
+      rating: 4,
+      createdAt: daysAgo(6),
+      updatedAt: daysAgo(6),
+    })
+    .run();
+  db.insert(schema.refunds)
+    .values({
+      purchaseId: liamPurchase.id,
+      status: RefundStatus.Open,
+      reason: "Bought the wrong one, I meant the advanced course.",
+      requestedAt: daysAgo(4),
+    })
+    .run();
+
+  console.log("Created Liam's Refund Request.");
+
+  // ─── Marta's Refund Request ───
+  // A Team Licence with no Claimed Seats, so a Platform Admin can approve it.
+  // Its Seats are on hold while the request is open.
+
+  db.insert(schema.refunds)
+    .values({
+      purchaseId: novakLicence.purchase.id,
+      status: RefundStatus.Open,
+      reason: "Our design team was reorganised and nobody needs these seats now.",
+      requestedAt: daysAgo(1),
+    })
+    .run();
+
+  console.log("Created Marta's Refund Request on her Team Licence.");
 
   // ─── Flush watch events ───
   // Batched: the heartbeat makes these by far the largest table, and one
@@ -2776,6 +2868,15 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(
     `  Teams: ${countRows(schema.teams)}, coupons: ${countRows(schema.coupons)} (${countRows(schema.coupons, isNotNull(schema.coupons.redeemedByUserId))} redeemed)`
   );
+
+  // ─── Sync users to Knock ───
+  // Name, email, avatar, and default preferences for anyone without a set.
+  if (process.env.KNOCK_SECRET_API_KEY) {
+    const synced = await syncAllUsers(db, await defaultNotifications());
+    console.log(`  Synced ${synced} users to Knock.`);
+  } else {
+    console.log("  Skipped Knock user sync: KNOCK_SECRET_API_KEY is not set.");
+  }
 }
 
 seed().catch(console.error);

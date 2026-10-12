@@ -3,11 +3,11 @@ import { Link, redirect, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/instructor.new";
-import { getCurrentUserId } from "~/lib/session";
+import { people } from "~/modules/permissions/person.server";
 import { parseFormData } from "~/lib/validation";
-import { UserRole } from "~/db/schema";
+import { markdown } from "~/lib/text";
 import { db } from "~/db";
-import { users, categories, courses, CourseStatus } from "~/db/schema";
+import { categories, courses, CourseStatus } from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
@@ -23,10 +23,6 @@ import {
 } from "~/components/ui/select";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
-
-function getUserById(id: number) {
-  return db.select().from(users).where(eq(users.id, id)).get();
-}
 
 function getAllCategories() {
   return db.select().from(categories).orderBy(categories.name).all();
@@ -62,7 +58,7 @@ function createCourse(
       title,
       slug,
       description,
-      salesCopy,
+      salesCopy: markdown(salesCopy),
       instructorId,
       categoryId,
       status: CourseStatus.Draft,
@@ -88,21 +84,7 @@ export function meta() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("Select a user from the DevUI panel to create a course.", {
-      status: 401,
-    });
-  }
-
-  const user = getUserById(currentUserId);
-
-  if (!user || user.role !== UserRole.Instructor) {
-    throw data("Only instructors can create courses.", {
-      status: 403,
-    });
-  }
+  await people.requireInstructorOrPlatformAdmin(request);
 
   const categories = getAllCategories();
 
@@ -110,17 +92,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("You must be logged in to create a course.", { status: 401 });
-  }
-
-  const user = getUserById(currentUserId);
-
-  if (!user || user.role !== UserRole.Instructor) {
-    throw data("Only instructors can create courses.", { status: 403 });
-  }
+  const person = await people.requireInstructorOrPlatformAdmin(request);
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, newCourseSchema);
@@ -151,7 +123,7 @@ export async function action({ request }: Route.ActionArgs) {
     slug,
     description,
     salesCopy,
-    currentUserId,
+    person.id,
     parseInt(categoryId, 10),
     coverImageUrl || null
   );
@@ -334,11 +306,11 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           ? error.data
           : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
-      title = "Access denied";
+      title = "Not allowed";
       message =
         typeof error.data === "string"
           ? error.data
-          : "You don't have permission to access this page.";
+          : "You aren't allowed to see this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

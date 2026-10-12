@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/instructor.$courseId.students";
-import { getCurrentUserId } from "~/lib/session";
-import { UserRole } from "~/db/schema";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
+import { isLapsed } from "~/lib/enrollments";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
@@ -11,21 +11,17 @@ import {
   modules,
   lessons,
   users,
-  courses,
   enrollments,
   quizzes,
   quizAttempts,
   lessonProgress,
+  purchases,
   LessonProgressStatus,
 } from "~/db/schema";
-import { eq, and, or, sql, desc } from "drizzle-orm";
+import { eq, and, or, sql, desc, inArray, max } from "drizzle-orm";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
-}
-
-function getCourseById(id: number) {
-  return db.select().from(courses).where(eq(courses.id, id)).get();
 }
 
 function getCourseEnrolledStudents(courseId: number) {
@@ -39,6 +35,44 @@ function getCourseEnrolledStudents(courseId: number) {
     .from(enrollments)
     .where(eq(enrollments.courseId, courseId))
     .all();
+}
+
+// Students who lost their Enrollment keep their progress, so they still show
+// on the roster. They have no Enrollment, so their purchase date stands in.
+function getCourseLapsedStudents(courseId: number, enrolledUserIds: number[]) {
+  const lessonIds = getCourseLessonIds(courseId);
+  if (lessonIds.length === 0) return [];
+
+  const withProgress = db
+    .selectDistinct({ userId: lessonProgress.userId })
+    .from(lessonProgress)
+    .where(inArray(lessonProgress.lessonId, lessonIds))
+    .all()
+    .map((row) => row.userId)
+    .filter((userId) => !enrolledUserIds.includes(userId));
+
+  if (withProgress.length === 0) return [];
+
+  return db
+    .select({
+      userId: purchases.userId,
+      enrolledAt: max(purchases.createdAt),
+    })
+    .from(purchases)
+    .where(
+      and(
+        eq(purchases.courseId, courseId),
+        inArray(purchases.userId, withProgress)
+      )
+    )
+    .groupBy(purchases.userId)
+    .all()
+    .map((row) => ({
+      enrollmentId: null,
+      userId: row.userId,
+      enrolledAt: row.enrolledAt ?? "",
+      completedAt: null,
+    }));
 }
 
 function getQuizByLessonId(lessonId: number) {
@@ -146,44 +180,26 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("Select a user from the DevUI panel to view student roster.", {
-      status: 401,
-    });
-  }
-
-  const user = getUserById(currentUserId);
-
-  if (
-    !user ||
-    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
-  ) {
-    throw data("Only instructors and admins can access this page.", {
-      status: 403,
-    });
-  }
-
-  const courseId = parseInt(params.courseId, 10);
-  if (isNaN(courseId)) {
-    throw data("Invalid course ID.", { status: 400 });
-  }
-
-  const course = getCourseById(courseId);
-
-  if (!course) {
-    throw data("Course not found.", { status: 404 });
-  }
-
-  if (course.instructorId !== currentUserId && user.role !== UserRole.Admin) {
-    throw data("You can only view students for your own courses.", {
-      status: 403,
-    });
-  }
+  const { course } = await coursePermissions.requireCapability(
+    request,
+    "manage",
+    { courseId: params.courseId }
+  );
+  const courseId = course.id;
 
   // Get all enrolled students
-  const enrolledStudents = getCourseEnrolledStudents(courseId);
+  const enrolledStudents: {
+    enrollmentId: number | null;
+    userId: number;
+    enrolledAt: string;
+    completedAt: string | null;
+  }[] = getCourseEnrolledStudents(courseId);
+  enrolledStudents.push(
+    ...getCourseLapsedStudents(
+      courseId,
+      enrolledStudents.map((s) => s.userId)
+    )
+  );
 
   // Get all lessons with quizzes for this course
   const courseModules = db
@@ -245,6 +261,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       email: studentUser?.email ?? "",
       enrolledAt: enrollment.enrolledAt,
       completedAt: enrollment.completedAt,
+      lapsed: isLapsed(enrollment),
       progress,
       quizScores,
     };
@@ -405,7 +422,11 @@ export default function InstructorStudentRoster({
                           {progressBar(student.progress)}
                         </td>
                         <td className="px-4 py-3">
-                          {student.completedAt ? (
+                          {student.lapsed ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                              Lapsed
+                            </span>
+                          ) : student.completedAt ? (
                             <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
                               Completed
                             </span>
@@ -464,7 +485,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           ? error.data
           : "Please select a user from the DevUI panel.";
     } else if (error.status === 403) {
-      title = "Access denied";
+      title = "Not allowed";
       message =
         typeof error.data === "string"
           ? error.data
