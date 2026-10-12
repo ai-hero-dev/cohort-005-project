@@ -44,10 +44,14 @@ export function getCountryTierInfo(countryCode: string | null) {
 }
 
 /**
- * Pure function to check if PPP access should be blocked.
- * Returns blocked=true when a discounted purchase is accessed from a different country.
+ * The Country Lock rule: a Purchase made at a Purchasing-Power Price only works
+ * from the country it was bought in. Returns blocked=true when a discounted
+ * Purchase is used from a different country.
+ *
+ * Callers: playback (the buyer's Individual Purchase) and Seat claims (the Team
+ * Licence the Seat belongs to). See ADR-0013.
  */
-export function checkPppAccess(
+export function checkCountryLock(
   coursePrice: number,
   coursePppEnabled: boolean,
   purchaseCountry: string | null,

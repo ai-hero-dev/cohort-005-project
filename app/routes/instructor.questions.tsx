@@ -3,7 +3,8 @@ import { Link, data, isRouteErrorResponse, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/instructor.questions";
-import { requireInstructorOrAdmin, requireStaff } from "~/lib/access.server";
+import { coursePermissions } from "~/modules/permissions/course-permissions.server";
+import { people } from "~/modules/permissions/person.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import { createComment } from "~/lib/comments.server";
 import { defaultNotifications } from "~/lib/notifications.server";
@@ -47,8 +48,9 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
   const reply = alias(comments, "reply");
   const replyAuthor = alias(users, "reply_author");
 
-  // Correlated: matches a live reply, by staff, to the outer question.
-  const staffReply = db
+  // Correlated: matches a live reply to the outer question by its course's
+  // owning Instructor or a Platform Admin.
+  const moderatorReply = db
     .select({ one: sql`1` })
     .from(reply)
     .innerJoin(replyAuthor, eq(replyAuthor.id, reply.userId))
@@ -66,10 +68,11 @@ function getUnansweredQuestions(instructorId: number | null): QueuedQuestion[] {
   const conditions = [
     isNull(comments.parentId),
     isNull(comments.deletedAt),
-    // Staff asking their own question shouldn't queue up as work for themselves.
+    // An owning Instructor or Platform Admin asking their own question shouldn't
+    // queue up as work for themselves.
     ne(author.role, UserRole.Admin),
     ne(comments.userId, courses.instructorId),
-    notExists(staffReply),
+    notExists(moderatorReply),
   ];
 
   if (instructorId !== null) {
@@ -103,21 +106,6 @@ function getCommentById(commentId: number) {
   return db.select().from(comments).where(eq(comments.id, commentId)).get();
 }
 
-function getCourseForLesson(lessonId: number) {
-  return db
-    .select({
-      courseId: courses.id,
-      courseTitle: courses.title,
-      courseSlug: courses.slug,
-      instructorId: courses.instructorId,
-    })
-    .from(lessons)
-    .innerJoin(modules, eq(lessons.moduleId, modules.id))
-    .innerJoin(courses, eq(modules.courseId, courses.id))
-    .where(eq(lessons.id, lessonId))
-    .get();
-}
-
 // A question sitting this long without an answer gets called out visually.
 const STALE_AFTER_DAYS = 3;
 
@@ -132,10 +120,12 @@ export function meta() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { userId, isAdmin } = await requireInstructorOrAdmin(request);
+  const person = await people.requireInstructorOrPlatformAdmin(request);
+  const isPlatformAdmin = person.role === "platform-admin";
 
-  // Admins span every course; instructors see only the courses they own.
-  const questions = getUnansweredQuestions(isAdmin ? null : userId);
+  // Platform Admins span every course; Instructors see only the courses
+  // they own.
+  const questions = getUnansweredQuestions(isPlatformAdmin ? null : person.id);
 
   const rendered = await Promise.all(
     questions.map(async (question) => ({
@@ -144,7 +134,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }))
   );
 
-  return { questions: rendered, isAdmin };
+  return { questions: rendered, isPlatformAdmin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -160,21 +150,17 @@ export async function action({ request }: Route.ActionArgs) {
     throw data("Question not found", { status: 404 });
   }
 
-  const course = getCourseForLesson(question.lessonId);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  // Answering as the course's voice — so it must be the course's own
-  // instructor, or an admin.
-  const { userId: authorId } = await requireStaff(request, course.courseId);
-  if (!authorId) {
-    throw data("Select a user from the DevUI panel.", { status: 401 });
-  }
+  // Answering as the course's voice, so it must be the course's owning
+  // Instructor or a Platform Admin: moderating its Discussions is "manage".
+  const { person } = await coursePermissions.requireCapability(
+    request,
+    "manage",
+    { lessonId: question.lessonId }
+  );
 
   const created = await createComment(
     db,
-    authorId,
+    person.id,
     question.lessonId,
     question.id,
     parsed.data.body,
@@ -306,17 +292,19 @@ function QuestionCard({ question }: { question: Question }) {
 export default function InstructorQuestions({
   loaderData,
 }: Route.ComponentProps) {
-  const { questions, isAdmin } = loaderData;
+  const { questions, isPlatformAdmin } = loaderData;
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-8">
       <nav className="mb-6 text-sm text-muted-foreground">
-        {/* /instructor is instructor-only, so admins go back to their own list. */}
+        {/* /instructor lists only the courses this person owns, but a Platform
+            Admin's queue spans every course, so they go back to the list of
+            every course. */}
         <Link
-          to={isAdmin ? "/admin/courses" : "/instructor"}
+          to={isPlatformAdmin ? "/admin/courses" : "/instructor"}
           className="hover:text-foreground"
         >
-          {isAdmin ? "Manage Courses" : "My Courses"}
+          {isPlatformAdmin ? "Manage Courses" : "My Courses"}
         </Link>
         <span className="mx-2">/</span>
         <span className="text-foreground">Questions</span>
@@ -325,7 +313,7 @@ export default function InstructorQuestions({
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Unanswered Questions</h1>
         <p className="mt-1 text-muted-foreground">
-          {isAdmin
+          {isPlatformAdmin
             ? "Questions across every course that no instructor or admin has replied to yet."
             : "Questions on your courses that you haven't replied to yet."}{" "}
           Replying here marks them answered.
@@ -383,7 +371,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       message =
         typeof error.data === "string"
           ? error.data
-          : "You don't have access to this page.";
+          : "You aren't allowed to see this page.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;
