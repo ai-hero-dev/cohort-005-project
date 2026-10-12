@@ -124,3 +124,121 @@ describe("requirePerson", () => {
     });
   });
 });
+
+describe("requirePlatformAdmin", () => {
+  function addPlatformAdmin() {
+    return db
+      .insert(schema.users)
+      .values({
+        name: "Pat Admin",
+        email: "pat@example.com",
+        role: UserRole.Admin,
+      })
+      .returning()
+      .get();
+  }
+
+  it("throws 401 asking to select a user when signed out", async () => {
+    const thrown = await people
+      .requirePlatformAdmin(makeRequest())
+      .catch((e) => e);
+
+    expect(thrown).toMatchObject({
+      init: { status: 401 },
+      data: "Select a user from the DevUI panel.",
+    });
+  });
+
+  it("throws 403 for a Student", async () => {
+    const request = await signedInRequest(base.user.id);
+
+    const thrown = await people.requirePlatformAdmin(request).catch((e) => e);
+
+    expect(thrown).toMatchObject({
+      init: { status: 403 },
+      data: "Only Platform Admins can do that.",
+    });
+  });
+
+  it("throws 403 for an Instructor", async () => {
+    const request = await signedInRequest(base.instructor.id);
+
+    const thrown = await people.requirePlatformAdmin(request).catch((e) => e);
+
+    expect(thrown).toMatchObject({
+      init: { status: 403 },
+      data: "Only Platform Admins can do that.",
+    });
+  });
+
+  it("returns the Person for a Platform Admin", async () => {
+    const platformAdmin = addPlatformAdmin();
+    const request = await signedInRequest(platformAdmin.id, {
+      headerCountry: "DE",
+    });
+
+    expect(await people.requirePlatformAdmin(request)).toEqual({
+      id: platformAdmin.id,
+      role: "platform-admin",
+      country: "DE",
+    });
+  });
+});
+
+describe("requireInstructorOrPlatformAdmin", () => {
+  it("returns the Person for an Instructor", async () => {
+    const request = await signedInRequest(base.instructor.id);
+
+    expect(await people.requireInstructorOrPlatformAdmin(request)).toEqual({
+      id: base.instructor.id,
+      role: "instructor",
+      country: null,
+    });
+  });
+
+  it("throws 403 for a Student", async () => {
+    const request = await signedInRequest(base.user.id);
+
+    const thrown = await people
+      .requireInstructorOrPlatformAdmin(request)
+      .catch((e) => e);
+
+    expect(thrown).toMatchObject({
+      init: { status: 403 },
+      data: "Only Instructors and Platform Admins can do that.",
+    });
+  });
+
+  it("returns the Person for a Platform Admin", async () => {
+    const platformAdmin = db
+      .insert(schema.users)
+      .values({
+        name: "Pat Admin",
+        email: "pat@example.com",
+        role: UserRole.Admin,
+      })
+      .returning()
+      .get();
+
+    const person = await people.requireInstructorOrPlatformAdmin(
+      await signedInRequest(platformAdmin.id)
+    );
+
+    expect(person).toEqual({
+      id: platformAdmin.id,
+      role: "platform-admin",
+      country: null,
+    });
+  });
+
+  it("throws 401 when signed out", async () => {
+    const thrown = await people
+      .requireInstructorOrPlatformAdmin(makeRequest())
+      .catch((e) => e);
+
+    expect(thrown).toMatchObject({
+      init: { status: 401 },
+      data: "Select a user from the DevUI panel.",
+    });
+  });
+});

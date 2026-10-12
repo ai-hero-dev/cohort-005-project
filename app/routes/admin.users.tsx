@@ -3,7 +3,7 @@ import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/admin.users";
-import { getCurrentUserId } from "~/lib/session";
+import { people } from "~/modules/permissions/person.server";
 import { parseFormData } from "~/lib/validation";
 import { UserRole, users } from "~/db/schema";
 import { db } from "~/db";
@@ -76,21 +76,7 @@ export function meta() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("Select a user from the DevUI panel to manage users.", {
-      status: 401,
-    });
-  }
-
-  const currentUser = getUserById(currentUserId);
-
-  if (!currentUser || currentUser.role !== UserRole.Admin) {
-    throw data("Only admins can access this page.", {
-      status: 403,
-    });
-  }
+  await people.requirePlatformAdmin(request);
 
   const users = getAllUsers();
 
@@ -98,16 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const currentUserId = await getCurrentUserId(request);
-
-  if (!currentUserId) {
-    throw data("You must be logged in.", { status: 401 });
-  }
-
-  const currentUser = getUserById(currentUserId);
-  if (!currentUser || currentUser.role !== UserRole.Admin) {
-    throw data("Only admins can manage users.", { status: 403 });
-  }
+  await people.requirePlatformAdmin(request);
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, adminUserActionSchema);
