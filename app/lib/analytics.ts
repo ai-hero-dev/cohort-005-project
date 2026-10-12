@@ -40,15 +40,16 @@ const RANGE_DAYS: Record<Exclude<AnalyticsRange, "all">, number> = {
 };
 
 /**
- * The inclusive start of a range, as an ISO timestamp, or null for all time.
+ * The inclusive start of a range counted back from `now`, as an ISO
+ * timestamp, or null for all time.
  *
  * The boundary is decided in exactly one place: a row landing exactly on the
  * cutoff is inside the range. Lives here rather than in the service because
  * panels built on other services have to agree with it.
  */
-export function rangeStart(range: AnalyticsRange): string | null {
+export function rangeStart(range: AnalyticsRange, now: Date): string | null {
   if (range === "all") return null;
-  return new Date(Date.now() - RANGE_DAYS[range] * 86_400_000).toISOString();
+  return new Date(now.getTime() - RANGE_DAYS[range] * 86_400_000).toISOString();
 }
 
 const MONTHS = [
