@@ -36,3 +36,22 @@ first time the code changes.
 Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
+
+## Import a module only through its entry points
+
+A module in `app/modules/` exposes its root files and hides everything in
+its subfolders. Import `~/modules/<name>/index.server`, never
+`~/modules/<name>/lib/...`, and have the module's own tests do the same. A
+deep import welds the caller to an implementation the module is free to
+change. See [app/modules/README.md](./app/modules/README.md).
+
+## A route does not query data a module owns
+
+Once a module owns a feature's data, the route asks the module for it and
+does not import `~/db` or `drizzle-orm` itself. The instructor analytics
+route gets everything from `instructorAnalytics`. A query in the loader
+splits the feature's rules across two files, and the module's tests stop
+covering what the page shows.
+
+`npm run lint:boundaries` enforces both rules where it can. It cannot see
+every case, so follow them where it is silent.
