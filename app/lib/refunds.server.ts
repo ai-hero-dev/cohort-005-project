@@ -89,6 +89,30 @@ function kindOf(seats: Seat[]): PurchaseKind {
   return seats.length > 0 ? "team_licence" : "individual_purchase";
 }
 
+/**
+ * A buyer's newest Individual Purchase of a course, or null. Their Team
+ * Licences are skipped, and a Student who only claimed a Seat has none. Read
+ * by the refund offer and by the playback Country Lock (ADR-0013).
+ */
+export function getNewestIndividualPurchase(
+  db: Queryable,
+  buyerId: number,
+  courseId: number
+): Purchase | null {
+  const newestFirst = db
+    .select()
+    .from(purchases)
+    .where(and(eq(purchases.userId, buyerId), eq(purchases.courseId, courseId)))
+    .orderBy(desc(purchases.createdAt), desc(purchases.id))
+    .all();
+
+  return (
+    newestFirst.find(
+      (purchase) => kindOf(getSeats(db, purchase.id)) === "individual_purchase"
+    ) ?? null
+  );
+}
+
 function getRefundRequestWithStatus(
   db: Queryable,
   purchaseId: number,
@@ -325,17 +349,7 @@ export function getRefundOffer(
   courseId: number,
   now: Date
 ): RefundOffer | null {
-  const newestFirst = db
-    .select()
-    .from(purchases)
-    .where(and(eq(purchases.userId, buyerId), eq(purchases.courseId, courseId)))
-    .orderBy(desc(purchases.createdAt), desc(purchases.id))
-    .all();
-
-  const individualPurchase = newestFirst.find(
-    (purchase) => kindOf(getSeats(db, purchase.id)) === "individual_purchase"
-  );
-
+  const individualPurchase = getNewestIndividualPurchase(db, buyerId, courseId);
   if (!individualPurchase) return null;
 
   const check = checkRefundRequest(db, individualPurchase.id, buyerId, now);
