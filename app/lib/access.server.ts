@@ -6,11 +6,11 @@ import {
   users,
   courses,
   enrollments,
-  purchases,
 } from "~/db/schema";
 import { getCurrentUserId } from "~/lib/session";
 import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess } from "~/lib/ppp";
+import { getNewestIndividualPurchase } from "~/lib/refunds.server";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -32,14 +32,6 @@ function findEnrollment(userId: number, courseId: number) {
 
 function isUserEnrolled(userId: number, courseId: number) {
   return !!findEnrollment(userId, courseId);
-}
-
-function findPurchase(userId: number, courseId: number) {
-  return db
-    .select()
-    .from(purchases)
-    .where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId)))
-    .get();
 }
 
 // getAccess never throws — the lesson page needs to render a paywall preview for
@@ -109,7 +101,9 @@ export async function getAccess(
   };
 
   if (enrolled && !isStaff && course) {
-    const purchase = findPurchase(userId, courseId);
+    // Judged against the newest Individual Purchase only. A Team Licence or a
+    // Claimed Seat never puts playback under a Country Lock (ADR-0013).
+    const purchase = getNewestIndividualPurchase(db, userId, courseId);
     const currentCountry = await resolveCountry(request);
     ppp = checkPppAccess(
       course.price,
