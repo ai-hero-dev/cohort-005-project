@@ -1,13 +1,15 @@
 import { splitRevenue } from "~/lib/analytics";
-import { calendarDay, lastDayOfWindow } from "~/lib/refunds.server";
+import { clockAt } from "~/modules/clock";
+import {
+  daysLeftInRefundWindow,
+  isWithinRefundWindow,
+} from "~/modules/refund-window";
 import type { ExposedCourse, RefundExposure } from "./types";
 
 // ─── Refund exposure ───
 // Gross revenue is reported the moment a purchase lands, but a purchase is
 // refundable for fourteen days, so some of what this page calls revenue is
 // still the learner's money. This panel says how much of it is.
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 /** A purchase, reduced to what the refund window needs to know. */
 export type ExposureRow = {
   courseId: number;
@@ -26,22 +28,16 @@ export function summariseRefundExposure(
   totalGrossCents: number,
   now: Date
 ): RefundExposure {
-  const today = calendarDay(now);
+  const clock = clockAt(now);
   const exposedByCourse = new Map<number, ExposedCourse>();
   let exposedGrossCents = 0;
   let exposedPurchaseCount = 0;
   let closingTodayCount = 0;
 
   for (const row of rows) {
-    const lastDay = lastDayOfWindow(row.createdAt);
-    if (today > lastDay) continue;
+    if (!isWithinRefundWindow(row.createdAt, clock)) continue;
 
-    // Whole days between today and the last day the learner may still ask.
-    const daysLeft = Math.round(
-      (new Date(`${lastDay}T00:00:00.000Z`).getTime() -
-        new Date(`${today}T00:00:00.000Z`).getTime()) /
-        MS_PER_DAY
-    );
+    const daysLeft = daysLeftInRefundWindow(row.createdAt, clock);
 
     exposedGrossCents += row.amountPaid;
     exposedPurchaseCount += 1;
