@@ -6,6 +6,10 @@ Cadence sells video courses to students. This glossary covers the language aroun
 
 ### People
 
+**Person**:
+Anyone signed in to Cadence, whatever their role. Someone who isn't signed in is not a Person.
+_Avoid_: Viewer, User, Visitor, Member
+
 **Student**:
 Someone who takes courses on Cadence.
 _Avoid_: Learner, User
@@ -67,6 +71,14 @@ A Seat no Student has claimed yet.
 
 **Claimed Seat**:
 A Seat a Student has claimed. It belongs to that Student, so a Team Licence with any Claimed Seat can't be refunded.
+
+**Purchasing-Power Price**:
+A price discounted for the country the buyer is in.
+_Avoid_: PPP price, regional price
+
+**Country Lock**:
+The rule that a Purchase made at a Purchasing-Power Price only works from the country it was bought in.
+_Avoid_: PPP block, geo-block, region lock
 
 ### Refunds
 
