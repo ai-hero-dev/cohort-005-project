@@ -9,7 +9,7 @@ import {
 } from "~/db/schema";
 import { getCurrentUserId } from "~/lib/session";
 import { resolveCountry } from "~/lib/country.server";
-import { checkPppAccess } from "~/lib/ppp";
+import { checkCountryLock } from "~/lib/ppp";
 import { getNewestIndividualPurchase } from "~/lib/refunds.server";
 
 function getUserById(id: number) {
@@ -105,7 +105,7 @@ export async function getAccess(
     // Claimed Seat never puts playback under a Country Lock (ADR-0013).
     const purchase = getNewestIndividualPurchase(db, userId, courseId);
     const currentCountry = await resolveCountry(request);
-    ppp = checkPppAccess(
+    ppp = checkCountryLock(
       course.price,
       course.pppEnabled,
       purchase?.country ?? null,

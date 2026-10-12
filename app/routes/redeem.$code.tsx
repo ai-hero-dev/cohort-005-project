@@ -11,6 +11,7 @@ import { isEnrolled } from "~/lib/enrollments.server";
 import { defaultNotifications } from "~/lib/notifications.server";
 import {
   claimSeat,
+  isSeatCountryLocked,
   SEAT_ON_HOLD,
   SEAT_REFUNDED,
 } from "~/lib/seat-claims.server";
@@ -19,7 +20,7 @@ import { Button } from "~/components/ui/button";
 import { Ticket, AlertCircle, CheckCircle2, Globe } from "lucide-react";
 import { data } from "react-router";
 import { db } from "~/db";
-import { purchases, coupons, courses } from "~/db/schema";
+import { coupons, courses } from "~/db/schema";
 import { eq } from "drizzle-orm";
 
 function getCourseById(id: number) {
@@ -76,19 +77,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         ? SEAT_REFUNDED
         : null;
 
-  // Check country mismatch upfront so we can show a clear message
-  let countryMismatch = false;
-  if (!alreadyRedeemed && !alreadyEnrolled) {
-    const userCountry = await resolveCountry(request);
-    const purchase = db
-      .select()
-      .from(purchases)
-      .where(eq(purchases.id, coupon.purchaseId))
-      .get();
-    if (purchase?.country && purchase.country !== (userCountry ?? "")) {
-      countryMismatch = true;
-    }
-  }
+  // Check the Country Lock upfront so we can show a clear message
+  const countryMismatch =
+    !alreadyRedeemed &&
+    !alreadyEnrolled &&
+    isSeatCountryLocked(db, coupon, await resolveCountry(request));
 
   return {
     course: { id: course.id, title: course.title, slug: course.slug },
@@ -120,7 +113,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     db,
     code,
     currentUserId,
-    userCountry ?? "",
+    userCountry,
     new Date(),
     await defaultNotifications()
   );
