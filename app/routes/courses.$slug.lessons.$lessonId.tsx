@@ -3,7 +3,11 @@ import { Link, useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
 import { getCurrentUserId } from "~/lib/session";
-import { getAccess, requireContentAccess } from "~/lib/access.server";
+import {
+  getAccess,
+  requireContentAccess,
+  requireTakeCourse,
+} from "~/lib/access.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import { markdown, type Markdown } from "~/lib/text";
 import {
@@ -678,7 +682,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let lessonProgressMap: Record<number, string> = {};
 
   if (currentUserId) {
-    if (enrolled) {
+    // Progress is recorded only for people who can take the course, so a
+    // Student under a Country Lock gets none.
+    if (access.canTakeCourse) {
       // Mark lesson as in-progress when viewed
       markLessonInProgress(currentUserId, lessonId);
       const progress = getLessonProgress(currentUserId, lessonId);
@@ -948,6 +954,11 @@ export async function action({ params, request }: Route.ActionArgs) {
     );
     if (!saved.ok) return saved;
     return { ok: true };
+  }
+
+  if (intent === "mark-complete" || intent === "submit-quiz") {
+    await requireTakeCourse(request, course.id);
+    requireLessonInCourse(lessonId, course.id);
   }
 
   if (intent === "mark-complete") {

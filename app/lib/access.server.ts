@@ -55,6 +55,12 @@ export type Access = {
    * Staff always can. Students need an enrollment that isn't PPP-blocked.
    */
   canViewContent: boolean;
+  /**
+   * May they take the course (progress, mark complete, quizzes, Watched time)?
+   * Only a Person with an Enrollment that isn't under a Country Lock — staff
+   * get no exemption here unless they're enrolled.
+   */
+  canTakeCourse: boolean;
 };
 
 const SIGNED_OUT: Access = {
@@ -68,6 +74,7 @@ const SIGNED_OUT: Access = {
   pppBlockedCountry: null,
   pppPurchaseCountry: null,
   canViewContent: false,
+  canTakeCourse: false,
 };
 
 export async function getAccess(
@@ -117,6 +124,7 @@ export async function getAccess(
     pppBlockedCountry: ppp.blockedCountry,
     pppPurchaseCountry: ppp.purchaseCountry,
     canViewContent: isStaff || (enrolled && !ppp.blocked),
+    canTakeCourse: enrolled && !ppp.blocked,
   };
 }
 
@@ -146,6 +154,28 @@ export async function requireContentAccess(
   }
 
   if (!access.canViewContent) {
+    throw data("You must be enrolled in this course.", { status: 403 });
+  }
+
+  return access;
+}
+
+/**
+ * Throws 401 when signed out, 403 unless the user can take the course: an
+ * Enrollment that isn't under a Country Lock. Use for progress, quizzes and
+ * Watched time.
+ */
+export async function requireTakeCourse(
+  request: Request,
+  courseId: number
+): Promise<Access> {
+  const access = await getAccess(request, courseId);
+
+  if (!access.userId) {
+    throw data("Select a user from the DevUI panel.", { status: 401 });
+  }
+
+  if (!access.canTakeCourse) {
     throw data("You must be enrolled in this course.", { status: 403 });
   }
 
