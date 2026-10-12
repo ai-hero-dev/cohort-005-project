@@ -51,3 +51,14 @@ export async function requirePerson(db: Db, request: Request): Promise<Person> {
   if (!person) throw data(SIGNED_OUT_MESSAGE, { status: 401 });
   return person;
 }
+
+export async function requirePlatformAdmin(
+  db: Db,
+  request: Request
+): Promise<Person> {
+  const person = await requirePerson(db, request);
+  if (person.role !== "platform-admin") {
+    throw data("Only Platform Admins can do that.", { status: 403 });
+  }
+  return person;
+}
