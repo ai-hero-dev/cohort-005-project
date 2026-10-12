@@ -10,7 +10,7 @@ import {
 } from "~/db/schema";
 import { getCurrentUserId } from "~/lib/session";
 import { resolveCountry } from "~/lib/country.server";
-import { checkPppAccess } from "~/lib/ppp";
+import { checkCountryLock } from "~/lib/ppp";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -104,7 +104,7 @@ export async function getAccess(
   if (enrolled && !isStaff && course) {
     const purchase = findPurchase(userId, courseId);
     const currentCountry = await resolveCountry(request);
-    ppp = checkPppAccess(
+    ppp = checkCountryLock(
       course.price,
       course.pppEnabled,
       purchase?.country ?? null,
