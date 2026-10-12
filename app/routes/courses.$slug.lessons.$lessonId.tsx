@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
-import { getCurrentUserId } from "~/lib/session";
 import {
-  getAccess,
-  requireContentAccess,
-  requireTakeCourse,
-} from "~/lib/access.server";
+  coursePermissions,
+  type Capability,
+  type CourseDecisions,
+  type CourseRef,
+  type DenialReason,
+} from "~/modules/permissions/course-permissions.server";
 import { renderComment } from "~/lib/comment-markdown.server";
 import { markdown, type Markdown } from "~/lib/text";
 import {
@@ -71,12 +72,7 @@ import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
 import { countryName } from "~/lib/ppp";
-import { parseFormData, parseParams } from "~/lib/validation";
-
-const lessonParamsSchema = z.object({
-  slug: z.string().min(1),
-  lessonId: z.coerce.number().int(),
-});
+import { parseFormData } from "~/lib/validation";
 
 const markCompleteSchema = z.object({
   intent: z.literal("mark-complete"),
@@ -127,10 +123,6 @@ type ThreadComment = {
   author: CommentAuthor;
   replies: ThreadComment[];
 };
-
-function getCourseBySlug(slug: string) {
-  return db.select().from(courses).where(eq(courses.slug, slug)).get();
-}
 
 function getCourseWithDetails(id: number) {
   const course = db
@@ -198,15 +190,32 @@ function getModuleById(id: number) {
 }
 
 /**
- * Throws 404 unless the lesson is in the course, so content access to one
- * course can't reach a lesson in another by posting its id to this route.
+ * The course named by this route's slug, through this lesson. A lesson in
+ * another course, or a malformed lesson id, counts as not found.
  */
-function requireLessonInCourse(lessonId: number, courseId: number) {
-  const lesson = getLessonById(lessonId);
-  const mod = lesson ? getModuleById(lesson.moduleId) : undefined;
-  if (!mod || mod.courseId !== courseId) {
-    throw data("Lesson not found in this course", { status: 404 });
-  }
+function lessonRef(params: { slug: string; lessonId: string }): CourseRef {
+  return { slug: params.slug, lessonId: params.lessonId };
+}
+
+/**
+ * What each action intent needs: comments, Bookmarks and Notes need view;
+ * progress and quizzes need take. Moderating Discussions (deleting someone
+ * else's post) additionally needs manage, checked in the delete intent.
+ */
+const INTENT_CAPABILITY: Record<string, Capability | undefined> = {
+  "create-comment": "view",
+  "edit-comment": "view",
+  "delete-comment": "view",
+  "toggle-bookmark": "view",
+  "save-note": "view",
+  "mark-complete": "take",
+  "submit-quiz": "take",
+};
+
+/** Whether the Person has an Enrollment, even one under Country Lock. */
+function isEnrolled(decisions: Extract<CourseDecisions, { found: true }>) {
+  const { take } = decisions;
+  return take.allowed || take.reason.kind === "country-lock";
 }
 
 function getUserById(id: number) {
@@ -613,14 +622,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 /** Why someone can't view a lesson's content. */
-type LockedReason =
-  | { kind: "signed-out" }
-  | { kind: "not-enrolled" }
-  | {
-      kind: "country-lock";
-      purchaseCountry: string | null;
-      currentCountry: string | null;
-    };
+type LockedReason = DenialReason;
 
 type FlatLesson = {
   id: number;
@@ -651,40 +653,27 @@ function flattenCourseLessons(course: {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const slug = params.slug;
-  const lessonId = Number(params.lessonId);
-
-  if (isNaN(lessonId)) {
-    throw data("Invalid lesson ID", { status: 400 });
-  }
-
-  const course = getCourseBySlug(slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const courseWithDetails = getCourseWithDetails(course.id);
-  if (!courseWithDetails) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const lesson = getLessonById(lessonId);
-  if (!lesson) {
+  // Not found covers an unknown course, a malformed lesson id, and a lesson
+  // from another course.
+  const decisions = await coursePermissions.getCourseDecisions(
+    request,
+    lessonRef(params)
+  );
+  if (!decisions.found) {
     throw data("Lesson not found", { status: 404 });
   }
 
-  const mod = getModuleById(lesson.moduleId);
-  if (!mod) {
-    throw data("Module not found", { status: 404 });
-  }
+  const { course, person, view, take, manage } = decisions;
+  const currentUserId = person?.id ?? null;
+  const enrolled = isEnrolled(decisions);
+  const lessonId = Number(params.lessonId);
 
-  // Verify lesson belongs to this course
-  if (mod.courseId !== course.id) {
-    throw data("Lesson not found in this course", { status: 404 });
+  const courseWithDetails = getCourseWithDetails(course.id);
+  const lesson = getLessonById(lessonId);
+  const mod = lesson ? getModuleById(lesson.moduleId) : undefined;
+  if (!courseWithDetails || !lesson || !mod) {
+    throw data("Lesson not found", { status: 404 });
   }
-
-  const access = await getAccess(request, course.id);
-  const currentUserId = access.userId;
 
   const curriculum = courseWithDetails.modules.map((m) => ({
     id: m.id,
@@ -698,16 +687,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Someone who can't view the content gets the lesson's title, its module and
   // the course outline — never the body, video or quiz — plus the reason, so
   // the page can show the right call to action.
-  if (!access.canViewContent) {
-    const lockedReason: LockedReason = access.pppBlocked
-      ? {
-          kind: "country-lock",
-          purchaseCountry: access.pppPurchaseCountry,
-          currentCountry: access.pppBlockedCountry,
-        }
-      : currentUserId
-        ? { kind: "not-enrolled" }
-        : { kind: "signed-out" };
+  if (!view.allowed) {
+    const lockedReason: LockedReason = view.reason;
 
     return {
       view: "locked" as const,
@@ -719,12 +700,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       curriculum,
       module: { id: mod.id, title: mod.title },
       lesson: { id: lesson.id, title: lesson.title },
-      enrolled: access.enrolled,
+      enrolled,
       lockedReason,
     };
   }
 
-  const enrolled = access.enrolled;
   let lessonStatus: string | null = null;
   let lastWatchPosition = 0;
   let watchProgress = 0;
@@ -733,7 +713,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   if (currentUserId) {
     // Progress is recorded only for people who can take the course, so a
     // Student under a Country Lock gets none.
-    if (access.canTakeCourse) {
+    if (take.allowed) {
       // Mark lesson as in-progress when viewed
       markLessonInProgress(currentUserId, lessonId);
       const progress = getLessonProgress(currentUserId, lessonId);
@@ -856,7 +836,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     watchProgress,
     lessonProgressMap,
     comments,
-    canModerate: access.isStaff,
+    canModerate: manage.allowed,
     instructorName: instructor?.name ?? "your instructor",
     bookmarked,
     note: note ? { body: note.body, updatedAt: note.updatedAt } : null,
@@ -864,30 +844,31 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
-  const { slug, lessonId } = parseParams(params, lessonParamsSchema);
-
-  const course = getCourseBySlug(slug);
-  if (!course) {
-    throw data("Course not found", { status: 404 });
-  }
-
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
-    throw data("You must be logged in", { status: 401 });
-  }
-
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  // Comment intents re-check access here rather than relying on the loader —
-  // loader guards don't protect actions.
+  // Every intent checks its own capability here — loader guards don't protect
+  // actions. The ref includes the lesson, so a lesson from another course (or
+  // a malformed id) is a 404.
+  const capability =
+    typeof intent === "string" ? INTENT_CAPABILITY[intent] : undefined;
+  if (!capability) {
+    throw data("Invalid action", { status: 400 });
+  }
+  const ref = lessonRef(params);
+  const { person } = await coursePermissions.requireCapability(
+    request,
+    capability,
+    ref
+  );
+  const currentUserId = person.id;
+  const lessonId = Number(params.lessonId);
+
   if (
     intent === "create-comment" ||
     intent === "edit-comment" ||
     intent === "delete-comment"
   ) {
-    const access = await requireContentAccess(request, course.id);
-
     try {
       if (intent === "create-comment") {
         const parsed = parseFormData(formData, createCommentSchema);
@@ -937,11 +918,15 @@ export async function action({ params, request }: Route.ActionArgs) {
       if (!existing || existing.lessonId !== lessonId) {
         throw data("Comment not found", { status: 404 });
       }
+      // Anyone who can view may delete their own posts; moderating someone
+      // else's takes the manage capability.
+      const decisions = coursePermissions.decide(person, ref);
+      const canModerate = decisions.found && decisions.manage.allowed;
       const deleted = await deleteComment(
         db,
         parsed.data.commentId,
         currentUserId,
-        access.isStaff,
+        canModerate,
         new Date(),
         await defaultNotifications()
       );
@@ -957,12 +942,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
   }
 
-  // Bookmark and Note intents re-check access here, like the comment intents
-  // above — loader guards don't protect actions.
   if (intent === "toggle-bookmark" || intent === "save-note") {
-    await requireContentAccess(request, course.id);
-    requireLessonInCourse(lessonId, course.id);
-
     if (intent === "toggle-bookmark") {
       const bookmarked = toggleBookmark(
         db,
@@ -988,11 +968,6 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "mark-complete" || intent === "submit-quiz") {
-    await requireTakeCourse(request, course.id);
-    requireLessonInCourse(lessonId, course.id);
-  }
-
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
     return { success: true };
@@ -1002,6 +977,12 @@ export async function action({ params, request }: Route.ActionArgs) {
     const quizId = Number(formData.get("quizId"));
     if (isNaN(quizId)) {
       throw data("Invalid quiz ID", { status: 400 });
+    }
+    // Scope the quiz to this lesson so a quiz elsewhere can't be reached by
+    // posting its id to this route.
+    const quiz = db.select().from(quizzes).where(eq(quizzes.id, quizId)).get();
+    if (!quiz || quiz.lessonId !== lessonId) {
+      throw data("Quiz not found", { status: 404 });
     }
 
     // Collect answers: form fields named "question-{questionId}" with value = optionId
