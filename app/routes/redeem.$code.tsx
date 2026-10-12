@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/redeem.$code";
-import { getCurrentUserId } from "~/lib/session";
+import { people } from "~/modules/permissions/person.server";
 import { resolveCountry } from "~/lib/country.server";
 import { parseParams, parseFormData } from "~/lib/validation";
 import { getSeatAvailability } from "~/lib/refunds.server";
@@ -55,12 +55,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw data("Coupon not found.", { status: 404 });
   }
 
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
+  const person = await people.getPerson(request);
+  if (!person) {
     throw redirect(
       `/login?redirectTo=${encodeURIComponent(`/redeem/${code}`)}`
     );
   }
+  const currentUserId = person.id;
 
   const course = getCourseById(coupon.courseId);
   if (!course) {
@@ -96,10 +97,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export async function action({ params, request }: Route.ActionArgs) {
   const { code } = parseParams(params, redeemParamsSchema);
 
-  const currentUserId = await getCurrentUserId(request);
-  if (!currentUserId) {
-    throw data("You must be logged in.", { status: 401 });
-  }
+  const { id: currentUserId } = await people.requirePerson(request);
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, redeemActionSchema);
