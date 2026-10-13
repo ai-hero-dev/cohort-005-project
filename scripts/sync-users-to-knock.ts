@@ -25,7 +25,9 @@ const envFile = path.join(root, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 if (!process.env.KNOCK_SECRET_API_KEY) {
-  console.error("KNOCK_SECRET_API_KEY is not set (in .env or the environment).");
+  console.error(
+    "KNOCK_SECRET_API_KEY is not set (in .env or the environment)."
+  );
   process.exit(1);
 }
 
