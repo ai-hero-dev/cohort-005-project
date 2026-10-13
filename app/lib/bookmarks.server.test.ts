@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { UserRole } from "~/db/schema";
-import { isBookmarked, listBookmarks, toggleBookmark } from "./bookmarks.server";
+import {
+  isBookmarked,
+  listBookmarks,
+  toggleBookmark,
+} from "./bookmarks.server";
 
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 
@@ -66,7 +70,11 @@ describe("listing Bookmarks", () => {
   it("lists only the Student's own Bookmarks, newest first, with their Lesson and Course", () => {
     const other = db
       .insert(schema.users)
-      .values({ name: "Other", email: "other@example.com", role: UserRole.Student })
+      .values({
+        name: "Other",
+        email: "other@example.com",
+        role: UserRole.Student,
+      })
       .returning()
       .get();
     toggleBookmark(db, base.user.id, lessonIds[0], NOW);

@@ -41,10 +41,7 @@ export function StarRating({
     >
       <span className="flex items-center">
         {STARS.map((star) => {
-          const fillPercent = Math.max(
-            0,
-            Math.min(1, average - (star - 1))
-          );
+          const fillPercent = Math.max(0, Math.min(1, average - (star - 1)));
           return (
             <span key={star} className="relative">
               <Star className={cn(starSize, "text-muted-foreground/40")} />
