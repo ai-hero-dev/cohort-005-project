@@ -120,7 +120,11 @@ export interface SetupRequest {
 }
 
 export type Resolution =
-  ResolvedTarget | CustomTarget | AgentRefusal | ResolveError | SetupRequest;
+  | ResolvedTarget
+  | CustomTarget
+  | AgentRefusal
+  | ResolveError
+  | SetupRequest;
 
 /**
  * The last option in both questions.
