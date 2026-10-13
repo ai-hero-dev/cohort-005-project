@@ -109,7 +109,9 @@ const channels: { entries: { id: string; key: string }[] } = await mapi(
 );
 const channel = channels.entries.find((c) => c.id === channelId);
 if (!channel) {
-  console.error(`No Knock channel has the id ${channelId} (KNOCK_FEED_CHANNEL_ID).`);
+  console.error(
+    `No Knock channel has the id ${channelId} (KNOCK_FEED_CHANNEL_ID).`
+  );
   process.exit(1);
 }
 
