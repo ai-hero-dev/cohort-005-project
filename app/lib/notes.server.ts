@@ -27,7 +27,8 @@ export function getNote(
 }
 
 export type SaveNoteResult =
-  { ok: true; note: Note } | { ok: false; error: string };
+  | { ok: true; note: Note }
+  | { ok: false; error: string };
 
 /**
  * Writes the Student's Note on the Lesson. Saving again replaces the body and
