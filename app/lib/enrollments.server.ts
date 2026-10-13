@@ -32,7 +32,8 @@ export function isEnrolled(
 }
 
 export type EnrollResult =
-  { ok: true; enrollment: Enrollment } | { ok: false; error: string };
+  | { ok: true; enrollment: Enrollment }
+  | { ok: false; error: string };
 
 /**
  * Gives the Student an Enrollment, then sends the new Enrollment Notification
