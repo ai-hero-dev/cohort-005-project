@@ -8,7 +8,21 @@ async function getHighlighter(): Promise<Highlighter> {
   if (!highlighter) {
     highlighter = await createHighlighter({
       themes: ["github-dark"],
-      langs: ["typescript", "javascript", "json", "bash", "html", "css", "tsx", "jsx", "sql", "yaml", "markdown", "text", "plaintext"],
+      langs: [
+        "typescript",
+        "javascript",
+        "json",
+        "bash",
+        "html",
+        "css",
+        "tsx",
+        "jsx",
+        "sql",
+        "yaml",
+        "markdown",
+        "text",
+        "plaintext",
+      ],
     });
   }
   return highlighter;
