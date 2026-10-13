@@ -32,7 +32,8 @@ export type DenialReason =
   | { kind: "not-owning-instructor-or-platform-admin" };
 
 export type Decision =
-  { allowed: true } | { allowed: false; reason: DenialReason };
+  | { allowed: true }
+  | { allowed: false; reason: DenialReason };
 
 export type Course = typeof courses.$inferSelect;
 
