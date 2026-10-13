@@ -14,7 +14,9 @@ export function CourseImage({
 
   if (!src || failed) {
     return (
-      <div className={`flex items-center justify-center bg-muted ${className ?? ""}`}>
+      <div
+        className={`flex items-center justify-center bg-muted ${className ?? ""}`}
+      >
         <BookOpen className="size-10 text-muted-foreground/40" />
       </div>
     );
