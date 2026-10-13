@@ -1,1 +1,1 @@
-npx lint-staged
+sh scripts/pre-commit.sh

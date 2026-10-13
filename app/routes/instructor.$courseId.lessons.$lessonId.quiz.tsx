@@ -440,7 +440,8 @@ export default function QuizBuilderWizard({
 
   // Toast on success
   const fetcherData = fetcher.data as
-    { success?: boolean; deleted?: boolean; error?: string } | undefined;
+    | { success?: boolean; deleted?: boolean; error?: string }
+    | undefined;
 
   if (fetcher.state === "idle" && fetcherData?.success) {
     if (fetcherData.deleted) {
