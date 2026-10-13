@@ -11,9 +11,9 @@ import { defaultNotifications } from "~/lib/notifications.server";
 export async function loader({ request }: Route.LoaderArgs) {
   const { id: currentUserId } = await people.requirePerson(request);
 
-  const credentials = await (
-    await defaultNotifications()
-  ).feedCredentials(currentUserId);
+  const credentials = await (await defaultNotifications()).feedCredentials(
+    currentUserId
+  );
   if (!credentials) {
     throw data("No Notification Feed", { status: 404 });
   }
