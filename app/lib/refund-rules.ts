@@ -7,7 +7,10 @@ export const REFUND_WATCH_LIMIT_SECONDS = 60 * 60;
 export const REFUND_COMPLETION_LIMIT = 0.5;
 
 export type RuleBreak =
-  "window_closed" | "watched_too_much" | "completed_too_much" | "seat_claimed";
+  | "window_closed"
+  | "watched_too_much"
+  | "completed_too_much"
+  | "seat_claimed";
 
 /** What a Platform Admin sees next to a Refund Request that breaks a rule. */
 export const RULE_BREAK_LABELS: Record<RuleBreak, string> = {
