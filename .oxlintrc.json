@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "react", "jsx-a11y", "import", "vitest"],
+  "jsPlugins": ["./lint-rules/sql-raw.js"],
   "categories": {
     "correctness": "error"
   },
@@ -84,7 +85,8 @@
     ],
     "import/no-default-export": "error",
     "vitest/no-disabled-tests": "error",
-    "vitest/no-focused-tests": "error"
+    "vitest/no-focused-tests": "error",
+    "sql/no-dynamic-raw": "error"
   },
   "overrides": [
     {
@@ -93,7 +95,8 @@
         "app/root.tsx",
         "app/routes.ts",
         "*.config.*",
-        "*.conf.*"
+        "*.conf.*",
+        "lint-rules/**"
       ],
       "rules": {
         "import/no-default-export": "off"
