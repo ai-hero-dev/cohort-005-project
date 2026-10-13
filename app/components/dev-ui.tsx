@@ -40,7 +40,13 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-export function DevUI({ users, currentUser, devCountry, countryTierInfo, countries }: DevUIProps) {
+export function DevUI({
+  users,
+  currentUser,
+  devCountry,
+  countryTierInfo,
+  countries,
+}: DevUIProps) {
   const [minimized, setMinimized] = useState(false);
   const [open, setOpen] = useState(false);
   const location = useLocation();

@@ -1,7 +1,7 @@
-import * as React from "react"
-import { Switch as SwitchPrimitive } from "radix-ui"
+import * as React from "react";
+import { Switch as SwitchPrimitive } from "radix-ui";
 
-import { cn } from "~/lib/utils"
+import { cn } from "~/lib/utils";
 
 function Switch({
   className,
@@ -21,7 +21,7 @@ function Switch({
         className="pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0 dark:data-[state=checked]:bg-primary-foreground dark:data-[state=unchecked]:bg-foreground"
       />
     </SwitchPrimitive.Root>
-  )
+  );
 }
 
-export { Switch }
+export { Switch };
