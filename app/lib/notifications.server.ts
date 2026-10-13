@@ -224,8 +224,9 @@ async function chooseNotifications(): Promise<Notifications> {
     "Knock is misconfigured; logging Notifications instead",
     loggingNotifications(),
     async () => {
-      const { knockNotifications } =
-        await import("./notifications.knock.server");
+      const { knockNotifications } = await import(
+        "./notifications.knock.server"
+      );
       return knockNotifications({
         secretKey,
         publicKey: requireEnv("KNOCK_PUBLIC_API_KEY"),
