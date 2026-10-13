@@ -1,4 +1,10 @@
-import { Form, Link, useActionData, useNavigation, useSearchParams } from "react-router";
+import {
+  Form,
+  Link,
+  useActionData,
+  useNavigation,
+  useSearchParams,
+} from "react-router";
 import { redirect, data } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/signup";
@@ -34,7 +40,8 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const currentUserId = await getCurrentUserId(request);
   if (currentUserId) {
     const redirectTo = url.searchParams.get("redirectTo");
-    const destination = redirectTo && redirectTo.startsWith("/") ? redirectTo : "/courses";
+    const destination =
+      redirectTo && redirectTo.startsWith("/") ? redirectTo : "/courses";
     throw redirect(destination);
   }
   return {};
@@ -60,7 +67,8 @@ export async function action({ request, url }: Route.ActionArgs) {
   const { name, email } = parsed.data;
 
   const redirectTo = url.searchParams.get("redirectTo");
-  const destination = redirectTo && redirectTo.startsWith("/") ? redirectTo : "/courses";
+  const destination =
+    redirectTo && redirectTo.startsWith("/") ? redirectTo : "/courses";
 
   // If email already exists, silently log them in
   const existingUser = db
@@ -155,11 +163,7 @@ export default function SignUp() {
                 )}
               </div>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-              >
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? "Creating account..." : "Sign Up"}
               </Button>
             </Form>
@@ -168,7 +172,14 @@ export default function SignUp() {
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link to={redirectTo ? `/login?redirectTo=${encodeURIComponent(redirectTo)}` : "/login"} className="font-medium text-primary hover:underline">
+          <Link
+            to={
+              redirectTo
+                ? `/login?redirectTo=${encodeURIComponent(redirectTo)}`
+                : "/login"
+            }
+            className="font-medium text-primary hover:underline"
+          >
             Log in
           </Link>
         </p>

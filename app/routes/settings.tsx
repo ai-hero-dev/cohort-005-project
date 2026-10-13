@@ -73,8 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const notificationPreferences = await tolerateNotificationFailure(
     `Could not read preferences for user ${currentUserId}`,
     DEFAULT_FEED_PREFERENCES,
-    async () =>
-      getFeedPreferences(await defaultNotifications(), currentUserId)
+    async () => getFeedPreferences(await defaultNotifications(), currentUserId)
   );
 
   return {
@@ -86,7 +85,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       role: currentUser.role,
     },
     refundRequests,
-    visibleNotificationCategories: visibleNotificationCategories(db, currentUserId),
+    visibleNotificationCategories: visibleNotificationCategories(
+      db,
+      currentUserId
+    ),
     notificationPreferences,
   };
 }
@@ -171,7 +173,8 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
       toast.success("Profile updated successfully.");
     }
     if (fetcher.state === "idle" && fetcher.data?.errors) {
-      const firstError = Object.values(fetcher.data.errors)[0] as string | undefined;
+      const firstError = Object.values(fetcher.data.errors)[0] as
+        string | undefined;
       if (firstError) toast.error(firstError);
     }
   }, [fetcher.state, fetcher.data]);
@@ -240,10 +243,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
                 </p>
               </div>
             )}
-            <Button
-              type="submit"
-              disabled={fetcher.state !== "idle"}
-            >
+            <Button type="submit" disabled={fetcher.state !== "idle"}>
               {fetcher.state !== "idle" ? "Saving..." : "Save Changes"}
             </Button>
           </fetcher.Form>
@@ -414,12 +414,10 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           : "Please select a user from the DevUI panel.";
     } else if (error.status === 404) {
       title = "User not found";
-      message =
-        typeof error.data === "string" ? error.data : "User not found.";
+      message = typeof error.data === "string" ? error.data : "User not found.";
     } else {
       title = `Error ${error.status}`;
-      message =
-        typeof error.data === "string" ? error.data : error.statusText;
+      message = typeof error.data === "string" ? error.data : error.statusText;
     }
   }
 
