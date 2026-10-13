@@ -13,13 +13,43 @@ export type PppTier = keyof typeof PPP_TIERS;
 
 const COUNTRY_TIER_MAP: Record<string, PppTier> = {
   // Tier 1 — Full price
-  US: 1, CA: 1, GB: 1, AU: 1, DE: 1, FR: 1, NL: 1, SE: 1, NO: 1, CH: 1, JP: 1, SG: 1,
+  US: 1,
+  CA: 1,
+  GB: 1,
+  AU: 1,
+  DE: 1,
+  FR: 1,
+  NL: 1,
+  SE: 1,
+  NO: 1,
+  CH: 1,
+  JP: 1,
+  SG: 1,
   // Tier 2 — 30% off
-  PL: 2, MX: 2, BR: 2, TR: 2, TH: 2, MY: 2, CZ: 2, CL: 2,
+  PL: 2,
+  MX: 2,
+  BR: 2,
+  TR: 2,
+  TH: 2,
+  MY: 2,
+  CZ: 2,
+  CL: 2,
   // Tier 3 — 50% off
-  IN: 3, CO: 3, AR: 3, ZA: 3, PH: 3, VN: 3, UA: 3, ID: 3,
+  IN: 3,
+  CO: 3,
+  AR: 3,
+  ZA: 3,
+  PH: 3,
+  VN: 3,
+  UA: 3,
+  ID: 3,
   // Tier 4 — 70% off
-  NG: 4, PK: 4, BD: 4, EG: 4, KE: 4, ET: 4,
+  NG: 4,
+  PK: 4,
+  BD: 4,
+  EG: 4,
+  KE: 4,
+  ET: 4,
 };
 
 export function getTierForCountry(countryCode: string | null): PppTier {
@@ -32,7 +62,10 @@ export function getDiscountForCountry(countryCode: string | null): number {
   return PPP_TIERS[tier].discount;
 }
 
-export function calculatePppPrice(priceInCents: number, countryCode: string | null): number {
+export function calculatePppPrice(
+  priceInCents: number,
+  countryCode: string | null
+): number {
   const discount = getDiscountForCountry(countryCode);
   return Math.round(priceInCents * (1 - discount));
 }
@@ -56,8 +89,16 @@ export function checkCountryLock(
   coursePppEnabled: boolean,
   purchaseCountry: string | null,
   currentCountry: string | null
-): { blocked: boolean; blockedCountry: string | null; purchaseCountry: string | null } {
-  const result = { blocked: false, blockedCountry: null as string | null, purchaseCountry: null as string | null };
+): {
+  blocked: boolean;
+  blockedCountry: string | null;
+  purchaseCountry: string | null;
+} {
+  const result = {
+    blocked: false,
+    blockedCountry: null as string | null,
+    purchaseCountry: null as string | null,
+  };
 
   // Skip: free courses or PPP-disabled courses
   if (coursePrice <= 0 || !coursePppEnabled) return result;
