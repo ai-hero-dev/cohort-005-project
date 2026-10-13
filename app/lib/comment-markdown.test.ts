@@ -18,7 +18,9 @@ describe("renderComment", () => {
     });
 
     it("highlights fenced code with shiki", async () => {
-      const html = await renderComment(markdown("```typescript\nconst a = 1;\n```"));
+      const html = await renderComment(
+        markdown("```typescript\nconst a = 1;\n```")
+      );
 
       expect(html).toContain("shiki");
       expect(html).toContain("const");
@@ -32,7 +34,9 @@ describe("renderComment", () => {
     });
 
     it("escapes markup inside code blocks", async () => {
-      const html = await renderComment(markdown("```html\n<script>alert(1)</script>\n```"));
+      const html = await renderComment(
+        markdown("```html\n<script>alert(1)</script>\n```")
+      );
 
       // shiki escapes as &#x3C; rather than &lt; — either is safe.
       expect(html).not.toContain("<script>");
@@ -48,34 +52,44 @@ describe("renderComment", () => {
 
   describe("raw HTML", () => {
     it("escapes a script tag instead of emitting it", async () => {
-      const html = await renderComment(markdown("<script>alert('xss')</script>"));
+      const html = await renderComment(
+        markdown("<script>alert('xss')</script>")
+      );
 
       expect(html).not.toContain("<script>");
       expect(html).toContain("&lt;script&gt;");
     });
 
     it("escapes an event-handler attribute", async () => {
-      const html = await renderComment(markdown('<img src=x onerror="alert(1)">'));
+      const html = await renderComment(
+        markdown('<img src=x onerror="alert(1)">')
+      );
 
       expect(html).not.toContain("<img");
-      expect(html).not.toContain("onerror=\"alert(1)\"");
+      expect(html).not.toContain('onerror="alert(1)"');
     });
 
     it("escapes an iframe", async () => {
-      const html = await renderComment(markdown('<iframe src="https://evil.test">'));
+      const html = await renderComment(
+        markdown('<iframe src="https://evil.test">')
+      );
 
       expect(html).not.toContain("<iframe");
     });
 
     it("escapes inline HTML mixed into a paragraph", async () => {
-      const html = await renderComment(markdown("hello <b onclick='x()'>there</b>"));
+      const html = await renderComment(
+        markdown("hello <b onclick='x()'>there</b>")
+      );
 
       expect(html).not.toContain("<b onclick");
       expect(html).toContain("&lt;b onclick");
     });
 
     it("escapes a style tag", async () => {
-      const html = await renderComment(markdown("<style>body{display:none}</style>"));
+      const html = await renderComment(
+        markdown("<style>body{display:none}</style>")
+      );
 
       expect(html).not.toContain("<style>");
     });
@@ -83,7 +97,9 @@ describe("renderComment", () => {
 
   describe("links", () => {
     it("keeps http and https links and marks them nofollow", async () => {
-      const html = await renderComment(markdown("[docs](https://example.test/a)"));
+      const html = await renderComment(
+        markdown("[docs](https://example.test/a)")
+      );
 
       expect(html).toContain('href="https://example.test/a"');
       expect(html).toContain('rel="nofollow noopener noreferrer"');
@@ -91,13 +107,17 @@ describe("renderComment", () => {
     });
 
     it("keeps relative links", async () => {
-      const html = await renderComment(markdown("[lesson](/courses/x/lessons/1)"));
+      const html = await renderComment(
+        markdown("[lesson](/courses/x/lessons/1)")
+      );
 
       expect(html).toContain('href="/courses/x/lessons/1"');
     });
 
     it("downgrades a javascript: link to plain text", async () => {
-      const html = await renderComment(markdown("[click](javascript:alert(1))"));
+      const html = await renderComment(
+        markdown("[click](javascript:alert(1))")
+      );
 
       expect(html).not.toContain("javascript:");
       expect(html).not.toContain("<a ");
@@ -105,7 +125,9 @@ describe("renderComment", () => {
     });
 
     it("downgrades a data: link to plain text", async () => {
-      const html = await renderComment(markdown("[click](data:text/html;base64,PHNjcmlwdD4=)"));
+      const html = await renderComment(
+        markdown("[click](data:text/html;base64,PHNjcmlwdD4=)")
+      );
 
       expect(html).not.toContain("<a ");
     });
@@ -117,7 +139,9 @@ describe("renderComment", () => {
     });
 
     it("escapes quotes in a link title", async () => {
-      const html = await renderComment(markdown('[x](https://example.test "a" onmouseover="alert(1)")'));
+      const html = await renderComment(
+        markdown('[x](https://example.test "a" onmouseover="alert(1)")')
+      );
 
       expect(html).not.toContain('onmouseover="alert(1)"');
     });
@@ -131,7 +155,9 @@ describe("renderComment", () => {
 
   describe("images", () => {
     it("drops images, keeping only the alt text", async () => {
-      const html = await renderComment(markdown("![tracking](https://evil.test/px.gif)"));
+      const html = await renderComment(
+        markdown("![tracking](https://evil.test/px.gif)")
+      );
 
       expect(html).not.toContain("<img");
       expect(html).toContain("tracking");

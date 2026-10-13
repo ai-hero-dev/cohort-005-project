@@ -1,4 +1,13 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as schema from "~/db/schema";
@@ -239,8 +248,7 @@ function getRefundFigures(db: Queryable, purchase: Purchase): RefundFigures {
 /** What the buyer is told when they can't raise a Refund Request. */
 const RULE_BREAK_ERRORS: Record<RuleBreak, string> = {
   window_closed: `The ${REFUND_WINDOW_DAYS}-day window has closed.`,
-  watched_too_much:
-    "You have watched too much of this course to get a refund.",
+  watched_too_much: "You have watched too much of this course to get a refund.",
   completed_too_much:
     "You have completed too much of this course to request a refund.",
   seat_claimed: "A Team Licence with a claimed Seat cannot be refunded.",
@@ -283,7 +291,11 @@ function findRuleBreaks(
 
 // ─── Raising a Refund Request ───
 
-export type Failure = { ok: false; status: 400 | 403 | 404 | 409; error: string };
+export type Failure = {
+  ok: false;
+  status: 400 | 403 | 404 | 409;
+  error: string;
+};
 
 type RefundCheck = { ok: true; purchase: Purchase } | Failure;
 
@@ -554,7 +566,8 @@ export function listRefundRequestsForReview(
       // A Claimed Seat belongs to another student, so the only way out of
       // that request is a decline. See docs/adr/0003.
       canApprove:
-        row.status === RefundStatus.Open && !ruleBreaks.includes("seat_claimed"),
+        row.status === RefundStatus.Open &&
+        !ruleBreaks.includes("seat_claimed"),
     };
   });
 }
@@ -862,7 +875,11 @@ async function notifyDecision(
 
   const purchase = getPurchase(db, refundRequest.purchaseId);
   if (!purchase) return;
-  const buyer = db.select().from(users).where(eq(users.id, purchase.userId)).get();
+  const buyer = db
+    .select()
+    .from(users)
+    .where(eq(users.id, purchase.userId))
+    .get();
   const course = db
     .select()
     .from(courses)

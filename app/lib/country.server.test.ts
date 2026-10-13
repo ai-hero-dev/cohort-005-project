@@ -29,7 +29,7 @@ describe("resolveCountry", () => {
   it("uses dev session override first", async () => {
     mockSession.set("devCountry", "IN");
     const result = await resolveCountry(
-      makeRequest({ "CF-IPCountry": "US", "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "CF-IPCountry": "US", "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBe("IN");
   });
@@ -41,7 +41,7 @@ describe("resolveCountry", () => {
 
   it("returns null without a dev override or CF header, even with an IP", async () => {
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4" })
     );
     expect(result).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe("resolveCountry", () => {
 
   it("ignores X-Forwarded-For entirely", async () => {
     const result = await resolveCountry(
-      makeRequest({ "X-Forwarded-For": "1.2.3.4, 5.6.7.8" }),
+      makeRequest({ "X-Forwarded-For": "1.2.3.4, 5.6.7.8" })
     );
     expect(mockFetch).not.toHaveBeenCalled();
     expect(result).toBeNull();
