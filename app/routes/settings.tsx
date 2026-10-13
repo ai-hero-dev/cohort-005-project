@@ -174,7 +174,8 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
     }
     if (fetcher.state === "idle" && fetcher.data?.errors) {
       const firstError = Object.values(fetcher.data.errors)[0] as
-        string | undefined;
+        | string
+        | undefined;
       if (firstError) toast.error(firstError);
     }
   }, [fetcher.state, fetcher.data]);
