@@ -2,7 +2,8 @@ import { Link } from "react-router";
 import type { Route } from "./+types/instructor.$courseId.students";
 import { getCurrentUserId } from "~/lib/session";
 import { UserRole } from "~/db/schema";
-import { isLiveEnrollment, isLiveProgress } from "~/lib/enrollments.server";
+import { isLiveProgress } from "~/lib/enrollments.server";
+import { isLapsed } from "~/lib/enrollments";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
@@ -36,9 +37,10 @@ function getCourseEnrolledStudents(courseId: number) {
       userId: enrollments.userId,
       enrolledAt: enrollments.enrolledAt,
       completedAt: enrollments.completedAt,
+      revokedAt: enrollments.revokedAt,
     })
     .from(enrollments)
-    .where(and(eq(enrollments.courseId, courseId), isLiveEnrollment))
+    .where(eq(enrollments.courseId, courseId))
     .all();
 }
 
@@ -248,6 +250,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       email: studentUser?.email ?? "",
       enrolledAt: enrollment.enrolledAt,
       completedAt: enrollment.completedAt,
+      lapsed: isLapsed(enrollment),
       progress,
       quizScores,
     };
@@ -408,7 +411,11 @@ export default function InstructorStudentRoster({
                           {progressBar(student.progress)}
                         </td>
                         <td className="px-4 py-3">
-                          {student.completedAt ? (
+                          {student.lapsed ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                              Lapsed
+                            </span>
+                          ) : student.completedAt ? (
                             <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
                               Completed
                             </span>
