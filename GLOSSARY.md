@@ -61,3 +61,6 @@ The React Router function that fetches a route's data on the server before the p
 
 **Slug**:
 The URL-safe name of a course, as in `/courses/:slug`.
+
+**Lapsed**:
+An Enrollment that is no longer active. Shown as a badge on the instructor's student roster.
