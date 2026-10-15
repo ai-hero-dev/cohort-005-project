@@ -24,6 +24,11 @@ import {
   LessonProgressStatus,
 } from "~/db/schema";
 
+/** How many users the seed put in the database. */
+function countSeededUsers(): number {
+  return db.select({ id: users.id }).from(users).all().length;
+}
+
 function getAllUsers() {
   return db.select().from(users).all();
 }
@@ -221,6 +226,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     devCountry,
     countryTierInfo,
     countries: COUNTRIES,
+    seededUserCount: countSeededUsers(),
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
     notificationFeed: currentUserId
       ? await getFeedCredentials(currentUserId)
@@ -245,6 +251,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     devCountry,
     countryTierInfo,
     countries,
+    seededUserCount,
     isTeamAdmin: userIsTeamAdmin,
     notificationFeed,
   } = loaderData;
@@ -266,6 +273,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           devCountry={devCountry}
           countryTierInfo={countryTierInfo}
           countries={countries}
+          seededUserCount={seededUserCount}
         />
         <Toaster position="bottom-right" richColors closeButton />
       </div>

@@ -26,6 +26,11 @@ import { eq, like, and, or, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { courses, categories, users, modules, lessons } from "~/db/schema";
 
+/** How many users the seed put in the database. */
+function countSeededUsers(): number {
+  return db.select({ id: users.id }).from(users).all().length;
+}
+
 function getAllUsers() {
   return db.select().from(users).all();
 }
@@ -159,6 +164,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     devCountry,
     countryTierInfo,
     countries: COUNTRIES,
+    seededUserCount: countSeededUsers(),
   };
 }
 
@@ -172,6 +178,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     devCountry,
     countryTierInfo,
     countries,
+    seededUserCount,
   } = loaderData;
   const [isDark, setIsDark] = useState(false);
 
@@ -352,6 +359,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         devCountry={devCountry}
         countryTierInfo={countryTierInfo}
         countries={countries}
+        seededUserCount={seededUserCount}
       />
     </div>
   );
