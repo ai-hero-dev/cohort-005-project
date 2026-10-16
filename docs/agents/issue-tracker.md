@@ -11,7 +11,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
+Target the `origin` remote's repo, never `ai-hero-dev/cohort-005-project`. `gh` does not reliably pick `origin`: when it can't prompt, it prefers a remote named `upstream`, and `npm run reset`/`cherry-pick` add one pointing at the course repo. Check with `gh repo set-default --view`; if it isn't `origin`'s repo, run `gh repo set-default <origin owner/repo>` (or pass `-R <origin owner/repo>`).
 
 ## Pull requests as a triage surface
 
