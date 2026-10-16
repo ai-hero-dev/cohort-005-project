@@ -50,6 +50,25 @@ Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
 
+## Leave the change somewhere a test can reach
+
+A change is not done until some part of the suite would go red if the change
+were wrong. The retro that wrote this rule found a run that passed every signal
+the factory has — a green suite, **Standards: PASS**, **Spec: PASS** — with the
+whole feature inside a loader. No test imports a route module, so not one test
+touched it.
+
+- The rule, the calculation, the decision: put it in a module under
+  `app/modules/`, behind an entry point a test can call with plain values.
+- The loader reads the request, calls the module, and throws or returns.
+- Write the tests in the same change. A follow-up ticket for tests does not get
+  built.
+
+If `npm test` passes the same number of tests before and after, the part that
+can be wrong is somewhere the suite cannot see. `npm run test:mutation` scores
+`app/lib/`, `app/modules/` and `request-logger/`; a change that produces no
+mutants has told you where it landed.
+
 ## Keep files under 5000 tokens
 
 Keep every file under 5000 tokens.
