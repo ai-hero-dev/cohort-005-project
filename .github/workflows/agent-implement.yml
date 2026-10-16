@@ -1,0 +1,186 @@
+name: Agent — Implement A Ticket
+
+# The first workflow in the software factory.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:implement` label on an issue. That is the whole
+#   interface. No comment, no trigger phrase, no @mention — one label.
+#
+# WHAT IT DOES
+#   Checks the repo out, gives an agent the ticket and the repo's own
+#   verification checks, and opens a DRAFT pull request with whatever the
+#   agent wrote. Draft, always: the human checkpoint we removed from the
+#   *build* has not been removed from the *merge*.
+#
+#   The agent itself is a Sandcastle script:
+#   .sandcastle/agent-workflows/implement/implement.ts, with its prompt next
+#   to it in prompt.md.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token, from a Claude
+#     subscription. To bill the API instead, see
+#     .sandcastle/agent-workflows/shared/common.ts.
+#   secrets.GITHUB_TOKEN — supplied by Actions. The `permissions:` block below
+#     is what decides how much of it this job gets.
+#
+# WHERE THE TOKENS GO
+#   GH_TOKEN is set on the steps that call GitHub, never on the job. The
+#   agent's step, and every step that runs code the agent wrote, sees no
+#   GitHub token at all. The checkout does not keep one either
+#   (`persist-credentials: false`), so the only step that can push is the one
+#   that hands git the token for that one command.
+#
+# A CAUTION THAT COMES WITH IT
+#   `issues: labeled` fires on issues, which cannot come from a fork. Do not
+#   copy this trigger onto `pull_request_target` — that runs fork code with
+#   this job's secrets, and a fork can label nothing but can change the code
+#   the agent runs.
+
+on:
+  issues:
+    types: [labeled]
+
+# The permissions block from the last lesson, finally attached to something.
+# It is per-workflow, and it is a ceiling: every step below runs with exactly
+# this much of the GITHUB_TOKEN and no more.
+permissions:
+  contents: write # push the agent's branch
+  issues: write # comment progress back on the ticket
+  pull-requests: write # open the draft PR
+
+# One run per ticket. A second label event on the same issue waits for the
+# first to finish rather than racing it onto the same branch.
+concurrency:
+  group: agent-implement-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    # Every other label on every other issue stops here, for free.
+    if: github.event.label.name == 'agent:implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      BRANCH: agent/issue-${{ github.event.issue.number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Migrate and seed the database
+        # The agent gets a real database, because half of this repo's checks
+        # need one. It is disposable: a fresh one, migrated and seeded, on
+        # every run.
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Open the branch
+        run: |
+          set -euo pipefail
+          git config user.name "agent-factory[bot]"
+          git config user.email "agent-factory[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+      - name: Read the ticket
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Only comments from people with write access reach the agent.
+          gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,comments \
+            | jq '.comments |= map(select(.authorAssociation | IN("OWNER", "MEMBER", "COLLABORATOR")))' \
+            > /tmp/ticket.json
+          jq -r '"# " + .title + "\n\n" + .body' /tmp/ticket.json > /tmp/ticket.md
+          cat /tmp/ticket.md
+
+      - name: Build the ticket
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
+
+      - name: Verify
+        # The agent was asked to run these. This runs them again, because a
+        # step that claims it is green and a step that is green are different
+        # things.
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Commit
+        id: commit
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "The agent changed nothing. Nothing to open a PR for."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Implement #${ISSUE_NUMBER}" -m "Closes #${ISSUE_NUMBER}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The token exists for this one command. Hooks are off, so nothing
+          # the agent wrote runs while it does.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c core.hooksPath=/dev/null \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/${GH_REPO}.git" "HEAD:refs/heads/${BRANCH}"
+
+      - name: Open the draft pull request
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="$(gh issue view "$ISSUE_NUMBER" --json title --jq .title)"
+          body_file=/tmp/pr-body.md
+          [ -s "$body_file" ] || echo "Built by the implementer workflow." > "$body_file"
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Closes #${ISSUE_NUMBER}. Built unattended by [this run](${RUN_URL})."
+            echo "Nobody has read this yet. That is what the draft state is for."
+          } >> "$body_file"
+
+          gh pr create \
+            --draft \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH" \
+            --title "$title" \
+            --body-file "$body_file"
+
+      - name: Report back on the ticket
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body \
+            "Implementer run **${{ job.status }}** — [logs](${RUN_URL})."
