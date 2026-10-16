@@ -9,7 +9,8 @@ ticket out of a queue.
 Read CODING_STANDARDS.md.
 
 - Behaviour goes in a deep module under app/modules/, behind an entry point a
-  test can call, never inline in a loader.
+  test can call, never inline in a loader. See "Leave the change somewhere a
+  test can reach".
 - Tests ship in this ticket. End with more passing tests than you started
   with.
 - The review workflow checks you against the ticket's "Done when". Reread it
