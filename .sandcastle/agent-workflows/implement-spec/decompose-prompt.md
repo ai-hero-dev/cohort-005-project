@@ -10,8 +10,10 @@ Cut the spec into tickets on these lines:
 
 - **One ticket, one module.** A ticket that adds behaviour adds it as a deep
   module under app/modules/, behind an entry point a test can call, with its
-  tests in the same ticket. A ticket whose whole diff would land in a loader
-  is a ticket cut wrong, and no reviewer will catch it.
+  tests in the same ticket. Read the "Leave the change somewhere a test can
+  reach" rule in CODING_STANDARDS.md before you decide what a ticket contains
+  — a ticket whose whole diff would land in a loader is a ticket cut wrong,
+  and no reviewer will catch it.
 - **The route comes last.** Wiring a finished module into a loader and a page
   is its own ticket, and it depends on the modules.
 - **Name things in GLOSSARY.md's words.** If the spec introduces an idea the
