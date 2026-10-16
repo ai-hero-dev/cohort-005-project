@@ -1,5 +1,13 @@
 # Coding standards
 
+**A workflow reads this file now, not a person.** `.github/workflows/agent-review.yml`
+fetches it on every review, quotes the heading of the rule it is applying, and
+posts the verdict on the pull request. Two things follow. A rule nobody can
+apply from the diff alone is a rule the reviewer will skip, so write each one so
+it can be checked against a patch. And a rule you add here is a rule that is
+applied to every change from the next run onwards, with nobody in the room to
+soften it — which is the reason to keep the list this short.
+
 ## Fail with a thrown response, not a return value
 
 A loader or an action that cannot continue throws. It does not return an
