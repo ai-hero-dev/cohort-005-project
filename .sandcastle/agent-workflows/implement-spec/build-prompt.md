@@ -12,7 +12,7 @@ Rules of this run:
 
 - Behaviour goes in a deep module under app/modules/, behind an entry point a
   test can call, imported only through its entry points. Never inline in a
-  loader.
+  loader. See "Leave the change somewhere a test can reach".
 - Tests ship in this ticket, not the next one. `npm test` must end with more
   passing tests than it started with.
 - The ticket's "Done when" is what the review workflow will check you
