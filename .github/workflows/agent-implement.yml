@@ -1,0 +1,290 @@
+name: Agent — Implement A Ticket
+
+# The first workflow in the software factory.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:implement` label on an issue. That is the whole
+#   interface. No comment, no trigger phrase, no @mention — one label.
+#
+# WHAT IT DOES
+#   Checks the repo out, gives an agent the ticket and the repo's own
+#   verification checks, and opens a DRAFT pull request with whatever the
+#   agent committed. Draft, always: the human checkpoint we removed from the
+#   *build* has not been removed from the *merge*.
+#
+#   The agent itself is a Sandcastle script:
+#   .sandcastle/agent-workflows/implement/implement.ts, with its prompt next
+#   to it in prompt.md.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token, from a Claude
+#     subscription. To bill the API instead, see
+#     .sandcastle/agent-workflows/shared/common.ts.
+#   secrets.FACTORY_PAT — a fine-grained PAT on this repository with Issues,
+#     Pull requests, Contents, Workflows and Actions, all read/write. Every
+#     step that talks to GitHub uses it: reading the ticket, pushing, opening
+#     the pull request, commenting. One token for the whole factory, because some
+#     hops need it anyway — by default the built-in GITHUB_TOKEN cannot open a
+#     pull request at all, and a label it applies starts no workflow.
+#   secrets.GITHUB_TOKEN — supplied by Actions, and now used for one thing:
+#     the checkout. The `permissions:` block below shrinks it to match.
+#   The `agent:implement` label. A fresh clone of this repository does not
+#     have it, and no workflow can create the label that starts it. Create it
+#     once:
+#       gh label create "agent:implement" --color 5319E7 \
+#         --description "Hand this issue to the implementer agent"
+#
+# WHERE THE TOKENS GO
+#   GH_TOKEN is set on the steps that call GitHub, never on the job. The
+#   agent's step, and every step that runs code the agent wrote, has no
+#   GitHub token in its environment. The checkout does not keep one either
+#   (`persist-credentials: false`), so the only step that can push is the one
+#   that hands git the token for that one command.
+#
+#   That keeps the token out of the agent's way. It is not a wall. The agent
+#   runs on the same machine as the steps that hold the PAT, with no sandbox,
+#   and a determined one could leave something behind for them to run. The
+#   real defence is who can reach the agent at all: only a collaborator can
+#   open an issue that gets read, only a collaborator's comments get in, and
+#   the label is an approval only a collaborator can give.
+#
+# WHO COMMITS
+#   The agent does, and the repo's own pre-commit hook runs on every commit it
+#   makes — `npm ci` installs it, through husky's `prepare` script, exactly as
+#   it does on your machine. When the hook rejects a commit, the agent reads
+#   the failure, fixes its work and commits again. The hook is code from the
+#   repo, so it runs only where there is no token: every git command that
+#   holds one switches hooks off with `core.hooksPath=/dev/null`.
+#
+# A CAUTION THAT COMES WITH IT
+#   `issues: labeled` fires on issues, which cannot come from a fork. Do not
+#   copy this trigger onto `pull_request_target` — that runs fork code with
+#   this job's secrets, and a fork can label nothing but can change the code
+#   the agent runs.
+
+on:
+  issues:
+    types: [labeled]
+
+# The permissions block. It is per-workflow, and it is a ceiling on the
+# GITHUB_TOKEN — and the GITHUB_TOKEN now only checks the code out. Everything
+# that writes goes through FACTORY_PAT, whose reach is set where you created
+# it, not here.
+permissions:
+  contents: read # the checkout
+
+# One run per ticket. A second label event on the same issue waits for the
+# first to finish rather than racing it onto the same branch.
+concurrency:
+  group: agent-implement-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    # Every other label on every other issue stops here, for free.
+    if: github.event.label.name == 'agent:implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      BRANCH: agent/issue-${{ github.event.issue.number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Transition labels
+        # The trigger comes off, so putting it back on is how you retry.
+        # `agent:in-progress` goes on until the run ends, however it ends.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          # A fresh clone of this repository does not have these labels yet.
+          gh label create "agent:in-progress" --color FBCA04 \
+            --description "An agent is working on this right now" || true
+          gh label create "agent:blocked" --color B60205 \
+            --description "An agent run failed here. Its comment says how to retry" || true
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:blocked" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Migrate and seed the database
+        # The agent gets a real database, because half of this repo's checks
+        # need one. It is disposable: a fresh one, migrated and seeded, on
+        # every run.
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Open the branch
+        id: branch
+        run: |
+          set -euo pipefail
+          git config user.name "agent-factory[bot]"
+          git config user.email "agent-factory[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # Where the agent starts. Anything after this is a commit it made.
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # `npm ci` ran husky, which points git at .husky/_. If it did not,
+          # the agent's commits would skip the hook without anyone noticing.
+          if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
+            echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
+            exit 1
+          fi
+
+      - name: Read the ticket
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          # A comment reaches the agent only when the person who wrote it has
+          # write access to this repo -- the same filter agent-explore.yml
+          # uses. The factory posts with FACTORY_PAT, so its comments are
+          # yours, and they pass. Explore's findings should: they are what the
+          # implementer most needs to see. The factory's status lines should
+          # not ("Building", "run failed"), so every one of them carries a
+          # hidden `<!-- factory:status -->` and is dropped here.
+          gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,comments \
+            | jq '.comments |= map(select(
+                (.authorAssociation | IN("OWNER", "MEMBER", "COLLABORATOR"))
+                and (.body | contains("<!-- factory:status -->") | not)))' \
+            > /tmp/ticket.json
+          jq -r '
+            "# " + .title + "\n\n" + .body
+            + (if (.comments | length) > 0
+               then "\n\n## Comments\n"
+                 + ([.comments[] | "\n### " + .author.login + " (" + .createdAt + ")\n\n" + .body + "\n"] | join(""))
+               else "" end)
+          ' /tmp/ticket.json > /tmp/ticket.md
+          cat /tmp/ticket.md
+
+      - name: Build the ticket
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
+
+      - name: Check the agent committed
+        id: check
+        # The agent owns the commits now, so this step owns the question of
+        # whether there are any. No commit means no pull request, and the run
+        # goes red rather than green-and-empty.
+        env:
+          BASE: ${{ steps.branch.outputs.base }}
+        run: |
+          set -euo pipefail
+          commits=$(git rev-list --count "$BASE..HEAD")
+          if [ "$commits" -eq 0 ]; then
+            echo "::error::The agent finished without committing anything. Nothing to open a PR for."
+            git status --short
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::The agent left uncommitted changes. The PR would not contain them."
+            git status --short
+            exit 1
+          fi
+          git log --oneline "$BASE..HEAD"
+          # The commit that passed this check is the one that gets pushed.
+          # Verify runs the agent's code next, and that code could commit.
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify
+        # The agent was asked to run these, and the hook ran some of them on
+        # every commit. This runs them again on what was committed, because a
+        # step that claims it is green and a step that is green are different
+        # things.
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Push
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          SHA: ${{ steps.check.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # The token exists for this one command. Hooks are off, so nothing
+          # the agent wrote runs while it does.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c core.hooksPath=/dev/null \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/${GH_REPO}.git" "${SHA}:refs/heads/${BRANCH}"
+
+      - name: Open the draft pull request
+        env:
+          # The one hop that never had a choice: by default the built-in
+          # GITHUB_TOKEN is not allowed to open a pull request, so
+          # `gh pr create` with it fails. This step runs nothing the agent
+          # wrote: it reads the agent's summary as text and hands it to `gh`.
+          # `--attach` uploads the agent's screenshots and swaps each matching
+          # /tmp/evidence path in the body for its URL. It needs a PAT too:
+          # GITHUB_TOKEN is rejected.
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          title="$(gh issue view "$ISSUE_NUMBER" --json title --jq .title)"
+          body_file=/tmp/pr-body.md
+          [ -s "$body_file" ] || echo "Built by the implementer workflow." > "$body_file"
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Closes #${ISSUE_NUMBER}. Built unattended by [this run](${RUN_URL})."
+            echo "Nobody has read this yet. That is what the draft state is for."
+          } >> "$body_file"
+
+          # nullglob: no screenshots means no --attach, and the PR still opens.
+          shopt -s nullglob
+          attach=()
+          for png in /tmp/evidence/*.png; do attach+=(--attach "$png"); done
+
+          gh pr create \
+            --draft \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH" \
+            --title "$title" \
+            --body-file "$body_file" \
+            "${attach[@]}"
+
+      - name: Mark blocked on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+
+      - name: Report back on the ticket
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          retry=""
+          [ "$JOB_STATUS" = "failure" ] && retry=" Re-add \`agent:implement\` to retry."
+          # Tagged, so the next run on this ticket leaves it out of the ticket.
+          gh issue comment "$ISSUE_NUMBER" --body \
+            "Implementer run **${JOB_STATUS}** — [logs](${RUN_URL}).${retry} <!-- factory:status -->"
+
+      - name: Always remove in-progress
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh issue edit "$ISSUE_NUMBER" --remove-label "agent:in-progress" || true

@@ -1,0 +1,283 @@
+name: Agent — Update A Pull Request's Branch
+
+# The factory's janitor. It brings a pull request's branch up to date with its
+# base, so a PR that has fallen behind does not need a person to merge main
+# into it.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:update-branch` label on a pull request.
+#
+# WHAT IT DOES
+#   Merges the base into the PR branch. Most of the time that merge is clean,
+#   and no agent runs at all: the workflow pushes the merge and says so. Only
+#   when the merge conflicts does an agent come in, and its job is narrow. It
+#   resolves the conflicts. It does not commit, push or write new behaviour.
+#   The workflow finishes the merge, runs `npm run check`, and pushes only if
+#   the check is green.
+#
+#   The agent itself is a Sandcastle script:
+#   .sandcastle/agent-workflows/update-branch/update-branch.ts, with its
+#   prompt next to it in prompt.md.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token.
+#   secrets.FACTORY_PAT — the factory's one token. Only the steps that call
+#     GitHub get it, none of them runs the PR's code or the agent's, and the
+#     push is the only one that hands it to git. It needs Workflows: write
+#     here for a reason of its own: when the base has changed a workflow, the
+#     merge commit carries that change, and GitHub refuses the push from a
+#     token that may not touch workflows.
+#
+#     Keeping the PAT out of the agent's environment is not a wall: the agent
+#     shares the machine with the push, unsandboxed. The real defence is who
+#     can reach the agent at all — same-repo PRs from collaborators, and a
+#     label only a collaborator can apply.
+#   secrets.GITHUB_TOKEN — supplied by Actions, used only for the checkout.
+#   The `agent:update-branch` label. A fresh clone of this repository does
+#     not have it, and no workflow can create the label that starts it.
+#     Create it once:
+#       gh label create "agent:update-branch" --color 5319E7 \
+#         --description "Merge the base into this pull request"
+#
+# WHAT THE PUSH STARTS
+#   A push made with the PAT is a push like yours: it fires `push` and
+#   `pull_request: synchronize`, so a CI workflow re-runs on the merge. None
+#   of the factory's own workflows listen for either, so nothing here loops.
+
+on:
+  # pull_request_target, not pull_request. `pull_request` runs against the
+  # PR's merge commit, and GitHub cannot make one for a PR that conflicts with
+  # its base, so that trigger silently never runs on exactly the PRs this
+  # workflow is for. pull_request_target runs against the base instead.
+  # It also runs the PR's own code with this job's secrets. The same-repo
+  # guard on the job, plus PRs from collaborators only, is the mitigation.
+  pull_request_target:
+    types: [labeled]
+
+# A ceiling on the GITHUB_TOKEN, which only checks the code out. The label,
+# the push and the comment all go through FACTORY_PAT.
+permissions:
+  contents: read # the checkout
+
+# One run per PR, never cancelled: two runs racing onto one branch is how a
+# merge gets lost.
+concurrency:
+  group: agent-update-branch-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  update-branch:
+    # A fork's branch is not ours to push to, and its code is not ours to run.
+    if: github.event.label.name == 'agent:update-branch' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Transition labels
+        # The trigger comes off, so putting it back on is how you retry.
+        # `agent:in-progress` goes on until the run ends, however it ends.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          # A fresh clone of this repository does not have these labels yet.
+          gh label create "agent:in-progress" --color FBCA04 \
+            --description "An agent is working on this right now" || true
+          gh label create "agent:blocked" --color B60205 \
+            --description "An agent run failed here. Its comment says how to retry" || true
+          gh pr edit "$PR_NUMBER" --remove-label "agent:update-branch" || true
+          gh pr edit "$PR_NUMBER" --remove-label "agent:blocked" || true
+          gh pr edit "$PR_NUMBER" --add-label "agent:in-progress"
+
+      - name: Read the pull request
+        # The agent gets no GitHub token, so what it needs to know about the
+        # PR goes into a file first. First of all, in fact, on every run: from
+        # the checkout onwards this job runs the PR's own code (`npm ci`), and
+        # the fewer steps that hold the PAT after that, the better.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          gh pr view "$PR_NUMBER" --json title,body \
+            --jq '"# " + .title + "\n\n" + .body' > /tmp/update-branch-pr.md
+          cat /tmp/update-branch-pr.md
+
+      - name: Checkout the PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Every branch and all of history: the merge needs the base and the
+          # common ancestor.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Installed before the merge, not after it: a conflict in package.json or
+      # the lockfile would leave nothing to install from.
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Migrate and seed the database
+        # `npm run check` needs one, and so does the agent that runs it.
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Merge the base
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "agent-factory[bot]"
+          git config user.email "agent-factory[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+
+          # Pinned before the agent runs, so it cannot move it: the base we
+          # merge.
+          base_sha="$(git rev-parse "origin/$BASE_REF")"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+          # Hooks off: they are the PR's code, and nobody has read it yet.
+          if git merge-base --is-ancestor "origin/$BASE_REF" HEAD; then
+            echo "outcome=up-to-date" >> "$GITHUB_OUTPUT"
+          elif git -c core.hooksPath=/dev/null merge --no-edit "origin/$BASE_REF"; then
+            echo "outcome=clean" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > /tmp/update-branch-conflicts.txt
+            [ -s /tmp/update-branch-conflicts.txt ] || {
+              echo "The merge failed, and not on a conflict. Read the log above." >&2
+              exit 1
+            }
+            cat /tmp/update-branch-conflicts.txt
+            echo "outcome=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve the conflicts
+        if: steps.merge.outputs.outcome == 'conflict'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: npx tsx .sandcastle/agent-workflows/update-branch/update-branch.ts
+
+      - name: Finish the merge
+        if: steps.merge.outputs.outcome == 'conflict'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # The agent resolves. The workflow commits.
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "The agent committed. It resolves conflicts; it does not commit." >&2
+            exit 1
+          fi
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$unresolved" ]; then
+            echo "The agent left these unresolved:" >&2
+            echo "$unresolved" >&2
+            exit 1
+          fi
+          # A file can be staged with its conflict markers still in it.
+          if xargs -r grep -slE '^(<<<<<<<|>>>>>>>)( |$)' \
+            < /tmp/update-branch-conflicts.txt; then
+            echo "Conflict markers are still in the files above." >&2
+            exit 1
+          fi
+          git add -A
+          git -c core.hooksPath=/dev/null commit --no-edit
+
+      - name: Check the merge
+        # Checked in history, not in the working tree: a tree can be put back
+        # after a commit, and the push sends commits. The commit going out
+        # must be exactly the merge of the PR head and the pinned base.
+        id: check
+        if: steps.merge.outputs.outcome == 'clean' || steps.merge.outputs.outcome == 'conflict'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.merge.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse 'HEAD^@')" != "$(printf '%s\n%s' "$HEAD_SHA" "$BASE_SHA")" ]; then
+            echo "HEAD is not the merge of the PR head and $BASE_REF. Nothing is pushed." >&2
+            git log --oneline --graph -5 >&2
+            exit 1
+          fi
+          # Verify runs the merged code next. What gets pushed is this commit.
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify
+        # The agent was asked to run this. This runs it again, because a step
+        # that claims it is green and a step that is green are different
+        # things.
+        # Reinstalled and remigrated first: the merge may have brought in new
+        # dependencies or migrations from the base.
+        if: steps.merge.outputs.outcome == 'conflict'
+        run: |
+          npm ci
+          npm run db:migrate
+          npm run check
+
+      - name: Push
+        if: steps.merge.outputs.outcome == 'clean' || steps.merge.outputs.outcome == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          SHA: ${{ steps.check.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # The token exists for this one command. Hooks are off, so nothing
+          # the PR or the agent wrote runs while it does. Not a force push: if
+          # someone pushed to the branch during the run, this is rejected.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c core.hooksPath=/dev/null \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/${GH_REPO}.git" "${SHA}:refs/heads/${BRANCH}"
+
+      - name: Mark blocked on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --add-label "agent:blocked" || true
+
+      - name: Report back on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          OUTCOME: ${{ steps.merge.outputs.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          body=/tmp/update-branch-comment.md
+          attach=()
+          if [ "$JOB_STATUS" != "success" ]; then
+            echo "Update-branch run **failed**. Nothing was pushed. Put \`agent:update-branch\` back on to retry." > "$body"
+          elif [ "$OUTCOME" = "up-to-date" ]; then
+            echo "\`$BRANCH\` already contains \`$BASE_REF\`. Nothing to merge." > "$body"
+          elif [ "$OUTCOME" = "clean" ]; then
+            echo "Merged \`$BASE_REF\` into \`$BRANCH\` cleanly. No conflicts, no agent." > "$body"
+          else
+            jq -r '.comment' "$RUNNER_TEMP/update-branch.json" > "$body"
+            # Uploads the agent's screenshots and swaps each /tmp/evidence
+            # path in the comment for its URL. nullglob: none means no --attach.
+            shopt -s nullglob
+            for png in /tmp/evidence/*.png; do attach+=(--attach "$png"); done
+          fi
+          # Tagged as the factory's own status line, like every run report.
+          printf '\n\n---\n\n[Logs](%s) <!-- factory:status -->\n' "$RUN_URL" >> "$body"
+          gh pr comment "$PR_NUMBER" --body-file "$body" "${attach[@]}"
+
+      - name: Always remove in-progress
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --remove-label "agent:in-progress" || true

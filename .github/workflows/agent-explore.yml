@@ -1,0 +1,366 @@
+name: Agent — Explore The Tickets
+
+# The third workflow in the software factory, and the one that runs first.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:explore` label on an issue. The run then ignores
+#   which issue that was. It explores EVERY open issue labelled
+#   `agent:explore`, together, as one batch.
+#
+# WHY A BATCH
+#   Tickets arrive in clumps, and a clump has duplicates in it: the same bug
+#   reported twice, three symptoms of one root cause. One run per ticket reads
+#   the same code three times and never notices. One run over the batch reads
+#   every ticket first, groups the ones that look related, explores each group
+#   once with a subagent, and closes the duplicates onto the oldest ticket.
+#
+# WHAT IT DOES — AND, MORE IMPORTANTLY, WHAT IT DOES NOT
+#   It reads. It reads the tickets and the code they would touch, and it hands
+#   back a plan: one entry per ticket, with the comment to post on it. It does
+#   not edit a file, open a branch or open a pull request.
+#
+#   It does not even post its own comments. There are two jobs:
+#
+#     explore   runs the agent. The agent holds no GitHub token at all.
+#     apply     runs no agent. It checks the plan, and only then writes.
+#
+#   Read where FACTORY_PAT goes before you read anything else. It is the
+#   enforcement, not the description. The prompt asks the agent to stay
+#   read-only. In the explore job the PAT goes to one step, the one that
+#   lists the batch, and that step runs before the agent exists and runs
+#   nothing but `gh` and `jq`. The job's own GITHUB_TOKEN can read the code
+#   and nothing else. So the agent has nothing to write with.
+#
+# WHY EXPLORE BEFORE YOU COMMIT
+#   A ticket that looks like twenty minutes and is actually a schema change
+#   costs the same to explore as one that really is twenty minutes. The cheap
+#   run in front tells you which one you have, and it tells you in prose a
+#   human can read in thirty seconds instead of a diff they have to review.
+#
+# AND THEN IT BRANCHES ON ITS OWN ANSWER
+#   Every entry in the plan carries a `tag`, a closed enum in
+#   .sandcastle/agent-workflows/explore/plan-schema.ts, and the apply job
+#   branches on it:
+#
+#     easy-call       →  swap `agent:explore` for `agent:implement`, which is
+#                        the trigger for agent-implement.yml. The factory
+#                        keeps going without being asked.
+#     anything else   →  swap it for `needs-a-human` and stop. Somebody has
+#                        to come and look.
+#     a duplicate     →  closed, whatever its tag.
+#
+#   That is a real if/else in the apply job, on a value the agent chose. Not a
+#   sentence in a prompt asking it to be careful. And a plan with a tag the
+#   workflow does not recognise is refused whole: nothing is written, the run
+#   goes red, and every issue in the batch is marked `agent:blocked`.
+#
+# THE LABELS WHILE IT RUNS
+#   When the batch is listed, each issue swaps `agent:explore` for
+#   `agent:in-progress`. Apply swaps `agent:in-progress` for the issue's next
+#   label. If the run fails, the `finish` job marks every issue still in
+#   progress `agent:blocked`; re-add `agent:explore` to retry.
+#
+# THE AGENT
+#   A Sandcastle script: .sandcastle/agent-workflows/explore/explore.ts, with
+#   its prompt next to it in prompt.md.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token.
+#   secrets.FACTORY_PAT — a fine-grained personal access token on this
+#     repository. Every call this workflow makes to GitHub uses it: listing
+#     the batch, posting the findings, moving the labels, closing duplicates.
+#     One hop is why it exists at all. A label applied with the built-in
+#     GITHUB_TOKEN does NOT start another workflow. GitHub suppresses that on
+#     purpose, so a workflow cannot trigger itself into a loop. The chain from
+#     explore to implement is exactly the loop we do want, so `agent:implement`
+#     has to go on with a token that is not the built-in one — and once that
+#     token is in the room, the factory uses it for everything.
+#   secrets.GITHUB_TOKEN — supplied by Actions, and used only to check the
+#     code out. Scoped per job below.
+#   The `agent:explore` label. A fresh clone of this repository does not have
+#     it, and no workflow can create the label that starts it. Create it once:
+#       gh label create "agent:explore" --color 5319E7 \
+#         --description "The factory explores this ticket"
+
+on:
+  issues:
+    types: [labeled]
+
+# One batch at a time, and never cancelled. A label that lands mid-run queues
+# one more run behind this one, and that run lists the batch again when it
+# starts. The issues this run took are `agent:in-progress` by then, so that
+# batch is only what was labelled mid-run, and nothing is lost. Every other
+# label gets a throwaway group of its own, so it can never bump that queued run.
+concurrency:
+  group: ${{ github.event.label.name == 'agent:explore' && 'agent-explore' || format('ignore-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  explore:
+    if: github.event.label.name == 'agent:explore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read # the checkout. The tickets are read with FACTORY_PAT.
+
+    # The batch it was given, and the plan it came back with. The apply job
+    # reads both.
+    outputs:
+      batch: ${{ steps.batch.outputs.numbers }}
+      plan: ${{ steps.plan.outputs.json }}
+
+    env:
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: List the batch
+        id: batch
+        env:
+          # The PAT, before the agent exists. Nothing after this step gets it.
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          # Labels often go on several at once. Let them all land.
+          sleep 5
+
+          # Titles and bodies are written by whoever opened the issue, so they
+          # go straight into a file. They never pass through the shell or an
+          # Actions expression. The agent reads the file. A comment goes in
+          # only when the person who wrote it has write access to this repo,
+          # and is not one of the factory's own status lines (they carry a
+          # hidden `<!-- factory:status -->`).
+          mkdir -p /tmp/explore
+          gh issue list --state open --label "agent:explore" --limit 100 \
+            --json number,title,body,createdAt,comments \
+            | jq 'map(.comments |= map(select(
+                (.authorAssociation | IN("OWNER", "MEMBER", "COLLABORATOR"))
+                and (.body | contains("<!-- factory:status -->") | not))))' \
+            > /tmp/explore/issues.json
+
+          numbers="$(jq -c '[.[].number] | sort' /tmp/explore/issues.json)"
+          echo "Batch: $numbers"
+          echo "numbers=$numbers" >> "$GITHUB_OUTPUT"
+
+          # The trigger comes off, so putting it back on is how you retry.
+          # `agent:in-progress` stays on until apply moves the issue on.
+          if [ "$numbers" != "[]" ]; then
+            # A fresh clone of this repository does not have these labels yet.
+            gh label create "agent:in-progress" --color FBCA04 \
+              --description "An agent is working on this right now" || true
+            gh label create "agent:blocked" --color B60205 \
+              --description "An agent run failed here. Its comment says how to retry" || true
+          fi
+          for n in $(jq -r '.[]' <<< "$numbers"); do
+            gh issue edit "$n" --remove-label "agent:explore" || true
+            gh issue edit "$n" --remove-label "agent:blocked" || true
+            gh issue edit "$n" --add-label "agent:in-progress"
+          done
+
+      - name: Setup Node.js 22
+        if: steps.batch.outputs.numbers != '[]'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.batch.outputs.numbers != '[]'
+        run: npm ci
+
+      - name: Install Claude Code
+        if: steps.batch.outputs.numbers != '[]'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Explore
+        if: steps.batch.outputs.numbers != '[]'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        # The plan comes back as plan.json, shaped and validated by
+        # .sandcastle/agent-workflows/explore/plan-schema.ts.
+        run: npx tsx .sandcastle/agent-workflows/explore/explore.ts
+
+      - name: Hand the plan to the apply job
+        id: plan
+        if: steps.batch.outputs.numbers != '[]'
+        run: |
+          set -euo pipefail
+          echo "json=$(jq -c . "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Hand the screenshots to the apply job
+        if: steps.batch.outputs.numbers != '[]'
+        uses: actions/upload-artifact@v4
+        with:
+          name: explore-evidence
+          path: /tmp/evidence/*.png
+          if-no-files-found: ignore
+
+  apply:
+    needs: explore
+    if: needs.explore.outputs.batch != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # No checkout and no agent, so the GITHUB_TOKEN gets nothing. This job
+    # writes with FACTORY_PAT, and it is the only job that can.
+    permissions: {}
+
+    env:
+      # On the job, which is fine here: nothing in it runs code from the repo
+      # or from an agent. It reads the plan as data.
+      GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Take the screenshots from the explore job
+        # A pattern, not a name, so a run with no screenshots finds nothing
+        # and carries on.
+        uses: actions/download-artifact@v4
+        with:
+          pattern: explore-evidence
+          path: /tmp/evidence
+          merge-multiple: true
+
+      - name: Check the plan
+        env:
+          # Through env, never pasted into the script. A `${{ }}` inside
+          # `run:` is text bash runs, and the plan was written by an agent
+          # that has just read a pile of untrusted issues.
+          BATCH: ${{ needs.explore.outputs.batch }}
+          PLAN: ${{ needs.explore.outputs.plan }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PLAN" > /tmp/plan.json
+          [ -s /tmp/plan.json ] || { echo "The explore run returned no plan." >&2; exit 1; }
+
+          # Every rule, written as "what is wrong". An empty list means apply.
+          jq -r --argjson batch "$BATCH" '
+            .issues as $plan
+            | [
+                # Every issue in the batch, exactly once.
+                (if ([$plan[].number] | sort) != $batch
+                 then "The plan needs exactly one entry for each of \($batch)."
+                 else empty end),
+
+                # A tag the branch below knows.
+                ($plan[] | select(.tag | IN("easy-call", "needs-a-human", "blocked") | not)
+                 | "#\(.number) has a tag this workflow does not know: \(.tag)."),
+
+                # Something to post.
+                ($plan[] | select((.comment // "") | test("\\S") | not)
+                 | "#\(.number) has an empty comment."),
+
+                # A duplicate points at an issue in this batch that survives.
+                ($plan[] | select(.duplicate_of) | . as $dup
+                 | select([$plan[] | select(.number == $dup.duplicate_of and (.duplicate_of | not))] == [])
+                 | "#\(.number) is a duplicate of #\(.duplicate_of), which is not a surviving issue in this batch.")
+              ]
+            | .[]
+          ' /tmp/plan.json > /tmp/problems.txt
+
+          if [ -s /tmp/problems.txt ]; then
+            echo "Refusing the plan. Nothing was written, and the finish job marks the batch agent:blocked." >&2
+            cat /tmp/problems.txt >&2
+            exit 1
+          fi
+
+      - name: Apply the plan
+        # Every label below goes on with FACTORY_PAT, and that matters for
+        # `agent:implement`: a label applied by the built-in token does not
+        # fire `issues: labeled`, so agent-implement.yml would never wake up
+        # and the chain would end here, silently, with a green tick.
+        #
+        # The findings comments are NOT tagged `<!-- factory:status -->`.
+        # They are the one thing the implementer most needs to read.
+        run: |
+          set -euo pipefail
+          # A fresh clone of this repository does not have these labels yet.
+          gh label create "needs-a-human" --color D93F0B \
+            --description "The factory stopped here" || true
+          gh label create "agent:implement" --color 5319E7 \
+            --description "Hand this issue to the implementer agent" || true
+
+          # nullglob: an issue with no screenshots gets no --attach.
+          shopt -s nullglob
+
+          # Survivors first, so "closed as duplicate of #N" points at an issue
+          # that already has its findings on it.
+          for n in $(jq -r '.issues | sort_by([.duplicate_of != null, .number]) | .[].number' /tmp/plan.json); do
+            entry="$(jq -c --argjson n "$n" '.issues[] | select(.number == $n)' /tmp/plan.json)"
+            dup="$(jq -r '.duplicate_of // empty' <<< "$entry")"
+            tag="$(jq -r '.tag' <<< "$entry")"
+
+            if [ -n "$dup" ]; then
+              next="Closed as duplicate of #$dup."
+            elif [ "$tag" = "easy-call" ]; then
+              next="Easy call. Handed to the implementer. Nobody is being asked first."
+            else
+              next="Stopped at \`$tag\`. Settle the open questions, then label \`agent:implement\` yourself."
+            fi
+
+            jq -r '.comment' <<< "$entry" > /tmp/comment.md
+            printf '\n\n---\n\n_%s_ [Logs](%s)\n' "$next" "$RUN_URL" >> /tmp/comment.md
+            # This issue's screenshots, /tmp/evidence/<n>-*.png. --attach
+            # uploads them and swaps each path in the comment for its URL.
+            attach=()
+            for png in /tmp/evidence/"$n"-*.png; do attach+=(--attach "$png"); done
+            gh issue comment "$n" --body-file /tmp/comment.md "${attach[@]}"
+
+            # The branch. Every path takes `agent:in-progress` off: this
+            # issue is done, and the finish job leaves it alone.
+            if [ -n "$dup" ]; then
+              gh issue edit "$n" --remove-label "agent:in-progress"
+              gh api --method PATCH "repos/$GH_REPO/issues/$n" \
+                -f state=closed -f state_reason=duplicate --silent
+            elif [ "$tag" = "easy-call" ]; then
+              gh issue edit "$n" \
+                --remove-label "agent:in-progress" --add-label "agent:implement"
+            else
+              gh issue edit "$n" \
+                --remove-label "agent:in-progress" --add-label "needs-a-human"
+            fi
+          done
+
+  # The two jobs above are one run, so the run's end is here: the same two
+  # label steps that close every other agent workflow, over the whole batch.
+  finish:
+    needs: [explore, apply]
+    if: always() && needs.explore.outputs.batch != '' && needs.explore.outputs.batch != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # No checkout and no agent. It writes labels and comments with FACTORY_PAT.
+    permissions: {}
+
+    env:
+      GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+      GH_REPO: ${{ github.repository }}
+      BATCH: ${{ needs.explore.outputs.batch }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Mark blocked on failure
+        if: contains(needs.*.result, 'failure')
+        run: |
+          # Only the issues apply did not get to. One it did is already moved on.
+          for n in $(jq -r '.[]' <<< "$BATCH"); do
+            gh issue view "$n" --json labels --jq '.labels[].name' \
+              | grep -qx "agent:in-progress" || continue
+            gh issue edit "$n" --add-label "agent:blocked" || true
+            gh issue comment "$n" --body \
+              "Explore run **failed** — [logs](${RUN_URL}). Re-add \`agent:explore\` to retry. <!-- factory:status -->"
+          done
+
+      - name: Always remove in-progress
+        if: always()
+        run: |
+          for n in $(jq -r '.[]' <<< "$BATCH"); do
+            gh issue edit "$n" --remove-label "agent:in-progress" || true
+          done
