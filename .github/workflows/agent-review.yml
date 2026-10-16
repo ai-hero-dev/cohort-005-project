@@ -1,0 +1,328 @@
+name: Agent — Review A Pull Request
+
+# The second workflow in the software factory. It reviews what the first one
+# built.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:review` label on a pull request.
+#
+# THE POINT OF THIS FILE: IT IS MEMORY-LESS
+#   This workflow shares nothing with the implementer run. No session, no
+#   transcript, no scratch files, no "as we discussed". It starts from a cold
+#   checkout and three primary sources it fetches itself:
+#
+#     1. the diff              — what actually changed
+#     2. CODING_STANDARDS.md   — the rules, at the repo root
+#     3. the originating issue — what was asked for, read from the ticket the
+#                                PR closes, not from the PR description
+#
+#   That independence is the whole value. An implementer that has argued
+#   itself into a shortcut will argue a reviewer that shares its context into
+#   the same shortcut. A reviewer that has never seen the argument cannot be.
+#   If you find yourself wanting to pass context from the build run into this
+#   one — that is the instinct to resist.
+#
+#   The agent itself is a Sandcastle script:
+#   .sandcastle/agent-workflows/review/review.ts, with its prompt next to it
+#   in prompt.md. The prompt hands it the repo's own code-review skill.
+#
+# IT FIXES WHAT IT CAN
+#   A review that only lists findings hands the work to a human. This one
+#   fixes every finding it can, as commits on the PR's branch, and leaves the
+#   rest as inline comments on their file and line. The workflow pushes the
+#   commits, never forced. If someone pushed to the branch during the run,
+#   GitHub rejects the push, and the commits go to a new branch,
+#   `<pr branch>-<run id>`, opened as a draft PR against the same base. The
+#   original PR gets the `agent:blocked` label, because a person has to pick
+#   which to keep.
+#
+# HOW IT ENDS: THE PR GOES READY
+#   The implementer opens every PR as a draft, and the draft means "nobody
+#   has read this yet". Once the verdict is posted, somebody has. So the last
+#   step marks the PR ready for review — on a fail as well as a pass. Ready is
+#   not approved. A failing verdict is for a human to read, and the merge is
+#   still a human's.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token.
+#   secrets.FACTORY_PAT — the factory's one token. Only the steps that call
+#     GitHub get it; the agent's step does not. It pushes the review's
+#     commits and posts its verdict and inline comments, so it needs
+#     Contents and Pull requests: write. Keeping it out of the agent's
+#     environment is tidiness, not a wall: the agent shares the machine with
+#     the steps that push and post. The real defence is who can reach the
+#     agent — same-repo PRs only, and a label only a collaborator can apply.
+#   secrets.GITHUB_TOKEN — supplied by Actions, used only for the checkout.
+#   The `agent:review` label. A fresh clone of this repository does not have
+#     it, and no workflow can create the label that starts it. Create it once:
+#       gh label create "agent:review" --color 5319E7 \
+#         --description "Ask the review workflow to read this pull request"
+#
+# A CAUTION THAT COMES WITH IT
+#   `pull_request` (not `pull_request_target`), so a PR from a fork runs with
+#   a read-only token and no secrets — no FACTORY_PAT either, so the run
+#   fails at its first `gh` call. That means this workflow will not review a
+#   fork PR. That is the correct trade: reviewing a stranger's code
+#   with a writable token is how a factory gets robbed.
+
+on:
+  pull_request:
+    types: [labeled]
+
+# A ceiling on the GITHUB_TOKEN, which only checks the code out. Reading the
+# PR and the ticket, pushing the fixes, posting the verdict and the inline
+# comments, and marking the PR ready all go through FACTORY_PAT.
+permissions:
+  contents: read # the checkout
+
+# One review per PR, never cancelled: a cancelled review would lose the
+# commits it made. A fresh `agent:review` waits for the one running. Only
+# that label joins the group: every other label gets a throwaway group of its
+# own, so labelling a PR under review `bug` queues nothing.
+concurrency:
+  group: ${{ github.event.label.name == 'agent:review' && format('agent-review-{0}', github.event.pull_request.number) || format('ignore-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: github.event.label.name == 'agent:review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      # Where the fixes go if the push to BRANCH is rejected. New every run.
+      FALLBACK_BRANCH: ${{ github.event.pull_request.head.ref }}-${{ github.run_id }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Transition labels
+        # The trigger comes off, so putting it back on is how you retry.
+        # `agent:in-progress` goes on until the run ends, however it ends.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          # A fresh clone of this repository does not have these labels yet.
+          gh label create "agent:in-progress" --color FBCA04 \
+            --description "An agent is working on this right now" || true
+          gh label create "agent:blocked" --color B60205 \
+            --description "An agent run failed here. Its comment says how to retry" || true
+          gh pr edit "$PR_NUMBER" --remove-label "agent:review" || true
+          gh pr edit "$PR_NUMBER" --remove-label "agent:blocked" || true
+          gh pr edit "$PR_NUMBER" --add-label "agent:in-progress"
+
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          # The PR's head, so the review's fixes are commits on top of it.
+          # Full history: the review diffs it against the base.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect the three primary sources
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+
+          # 1. The diff: the agent takes it against `origin/$BASE_REF`, the
+          #    base as it is now, three-dot, so anything pushed to the base
+          #    since the PR opened is not blamed on the PR.
+          # 2. The standards: CODING_STANDARDS.md, in the checkout.
+          # 3. The spec. Whatever issue this PR closes — found in the PR body,
+          #    which is the one thing here we do read from the PR. If there is
+          #    no `Closes #n`, the Spec axis reports "no spec available"
+          #    rather than inventing one.
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/pr-body.md
+          issue=$(grep -oiE '(closes|fixes|resolves) #[0-9]+' /tmp/pr-body.md \
+            | head -n1 | grep -oE '[0-9]+' || true)
+          if [ -n "$issue" ]; then
+            gh issue view "$issue" --json number,title,body \
+              --jq '"# Ticket #" + (.number|tostring) + ": " + .title + "\n\n" + .body' \
+              > /tmp/review-spec.md
+          else
+            echo "No spec available: this PR does not say which ticket it closes." \
+              > /tmp/review-spec.md
+          fi
+          cat /tmp/review-spec.md
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Migrate and seed the database
+        # The pre-commit hook runs on every commit the agent makes, and the
+        # repo's checks need a database.
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Open the branch
+        run: |
+          set -euo pipefail
+          git config user.name "agent-factory[bot]"
+          git config user.email "agent-factory[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          # `npm ci` ran husky, which points git at .husky/_. If it did not,
+          # the agent's commits would skip the hook without anyone noticing.
+          if [ "$(git config core.hooksPath)" != ".husky/_" ]; then
+            echo "::error::The pre-commit hook is not installed (core.hooksPath is '$(git config core.hooksPath)')."
+            exit 1
+          fi
+
+      - name: Review the pull request
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: npx tsx .sandcastle/agent-workflows/review/review.ts
+
+      - name: Push the review's fixes
+        id: push
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::warning::The review left uncommitted changes. Only its commits are pushed."
+            git status --short
+          fi
+          if [ "$(git rev-parse HEAD)" = "$HEAD_SHA" ]; then
+            echo "The review made no commits. Nothing to push."
+            exit 0
+          fi
+          git log --oneline "$HEAD_SHA..HEAD"
+          # The token exists for these commands. Hooks are off, so nothing
+          # the PR or the agent wrote runs while it does.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          push_to() {
+            git -c core.hooksPath=/dev/null \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              push "https://github.com/${GH_REPO}.git" "HEAD:refs/heads/$1"
+          }
+          # Not a force push: if someone pushed to the branch during the run,
+          # this is rejected.
+          if push_to "$BRANCH"; then
+            exit 0
+          fi
+          # Rejected. Never force it, and never lose the fixes: push them to a
+          # branch of their own, which this run's id makes new.
+          echo "::warning::The push to $BRANCH was rejected. Pushing the fixes to $FALLBACK_BRANCH instead."
+          push_to "$FALLBACK_BRANCH"
+          echo "fallback=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request for the rejected push
+        id: fallback
+        if: steps.push.outputs.fallback == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          {
+            echo "The \`agent:review\` run on #${PR_NUMBER} committed fixes on top of \`${BRANCH}\`,"
+            echo "but \`${BRANCH}\` moved during the run and the push was rejected. These are those fixes,"
+            echo "so they are not lost. Keep this PR or #${PR_NUMBER}, and close the other."
+            echo ""
+            echo "Built unattended by [this run](${RUN_URL})."
+          } > /tmp/review-fallback.md
+          url="$(gh pr create \
+            --draft \
+            --base "$BASE_REF" \
+            --head "$FALLBACK_BRANCH" \
+            --title "$(gh pr view "$PR_NUMBER" --json title --jq .title) (review run ${{ github.run_id }})" \
+            --body-file /tmp/review-fallback.md)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Post the verdict on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          FALLBACK: ${{ steps.push.outputs.fallback }}
+          FALLBACK_URL: ${{ steps.fallback.outputs.url }}
+        run: |
+          set -euo pipefail
+          [ -s /tmp/review-verdict.md ] || \
+            echo "The review run produced no verdict. See the logs. Re-add \`agent:review\` to retry." \
+              > /tmp/review-verdict.md
+          if [ "$FALLBACK" = "true" ]; then
+            {
+              echo ""
+              echo "The push of this review's fixes to \`$BRANCH\` was **rejected**: the branch moved during this run. Nothing was force-pushed."
+              echo "The fixes are on \`$FALLBACK_BRANCH\`${FALLBACK_URL:+, opened as ${FALLBACK_URL}}. Labelled \`agent:blocked\`: keep one of the two PRs."
+            } >> /tmp/review-verdict.md
+          fi
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Reviewed by the review workflow — [logs](${RUN_URL}). This run"
+            echo "saw the diff, the standards and the ticket, and nothing else."
+          } >> /tmp/review-verdict.md
+          # Uploads the agent's screenshots and swaps each /tmp/evidence path
+          # in the body for its URL. nullglob: none means no --attach.
+          shopt -s nullglob
+          attach=()
+          for png in /tmp/evidence/*.png; do attach+=(--attach "$png"); done
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-verdict.md "${attach[@]}"
+
+      - name: Post the inline comments
+        # One review, event COMMENT, with a comment on each line the agent
+        # left a finding on. They go where the fixes went: the fallback PR if
+        # the push was rejected. review.ts already dropped every comment
+        # outside the diff, because GitHub rejects the whole review for one.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+          TARGET: ${{ steps.fallback.outputs.number || github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          review="$RUNNER_TEMP/review-comments.json"
+          if [ "$(jq '.comments | length' "$review")" -eq 0 ]; then
+            echo "No inline comments: the review fixed or passed everything."
+            exit 0
+          fi
+          gh api --method POST "repos/$GH_REPO/pulls/$TARGET/reviews" \
+            --input "$review" --silent
+
+      - name: Mark the pull request ready
+        # No `always()` here. If the agent broke, nobody has read the PR, so
+        # it stays a draft. And it goes ready only when a real verdict was
+        # posted: the fallback note above is not a review. The verdict's own
+        # `## Standards:` heading is how we tell. Pass or fail does not
+        # matter. This step runs nothing the agent or the PR wrote: it reads
+        # the verdict as text and calls `gh`.
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          if grep -q '## Standards:' /tmp/review-verdict.md; then
+            gh pr ready "$PR_NUMBER"
+          else
+            echo "No verdict, so the PR stays a draft."
+          fi
+
+      - name: Mark blocked on failure or a rejected push
+        # A rejected push is blocked too: the fixes are on another branch, and
+        # a person has to choose between the two PRs.
+        if: failure() || steps.push.outputs.fallback == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --add-label "agent:blocked" || true
+
+      - name: Always remove in-progress
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: gh pr edit "$PR_NUMBER" --remove-label "agent:in-progress" || true
