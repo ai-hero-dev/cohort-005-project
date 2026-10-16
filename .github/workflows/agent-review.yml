@@ -1,0 +1,148 @@
+name: Agent — Review A Pull Request
+
+# The second workflow in the software factory. It reviews what the first one
+# built.
+#
+# WHAT TRIGGERS IT
+#   Someone puts the `agent:review` label on a pull request.
+#
+# THE POINT OF THIS FILE: IT IS MEMORY-LESS
+#   This workflow shares nothing with the implementer run. No session, no
+#   transcript, no scratch files, no "as we discussed". It starts from a cold
+#   checkout and three primary sources it fetches itself:
+#
+#     1. the diff              — what actually changed
+#     2. CODING_STANDARDS.md   — the rules, at the repo root
+#     3. the originating issue — what was asked for, read from the ticket the
+#                                PR closes, not from the PR description
+#
+#   That independence is the whole value. An implementer that has argued
+#   itself into a shortcut will argue a reviewer that shares its context into
+#   the same shortcut. A reviewer that has never seen the argument cannot be.
+#   If you find yourself wanting to pass context from the build run into this
+#   one — that is the instinct to resist.
+#
+#   The agent itself is a Sandcastle script:
+#   .sandcastle/agent-workflows/review/review.ts, with its prompt next to it
+#   in prompt.md.
+#
+# WHAT IT NEEDS
+#   secrets.CLAUDE_CODE_OAUTH_TOKEN — the agent's auth token.
+#   secrets.FACTORY_PAT — the factory's one token. Only the steps that call
+#     GitHub get it; the agent's step does not. This workflow could manage
+#     with the built-in token, but the rest of the factory cannot, so it uses
+#     the same one for simplicity. Keeping it out of the agent's environment
+#     is tidiness, not a wall: the agent shares the machine with the step
+#     that posts the verdict. The real defence is who can reach the agent —
+#     same-repo PRs only, and a label only a collaborator can apply.
+#   secrets.GITHUB_TOKEN — supplied by Actions, used only for the checkout.
+#
+# A CAUTION THAT COMES WITH IT
+#   `pull_request` (not `pull_request_target`), so a PR from a fork runs with
+#   a read-only token and no secrets — no FACTORY_PAT either, so the run
+#   fails at its first `gh` call. That means this workflow will not review a
+#   fork PR. That is the correct trade: reviewing a stranger's code
+#   with a writable token is how a factory gets robbed.
+
+on:
+  pull_request:
+    types: [labeled]
+
+# A ceiling on the GITHUB_TOKEN, which only checks the code out. Reading the
+# PR and the ticket and posting the verdict go through FACTORY_PAT.
+permissions:
+  contents: read # the checkout
+
+# One review per PR, and a fresh `agent:review` cancels a stale one. Only
+# that label joins the group: every other label gets a throwaway group of its
+# own, so labelling a PR under review `bug` cancels nothing.
+concurrency:
+  group: ${{ github.event.label.name == 'agent:review' && format('agent-review-{0}', github.event.pull_request.number) || format('ignore-{0}', github.run_id) }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.label.name == 'agent:review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          # The merge commit, and enough history to diff against the base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect the three primary sources
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+
+          # 1. The diff. Three-dot, so it is the change and not the drift.
+          git diff "$BASE_SHA"...HEAD > /tmp/review-diff.patch
+          wc -l /tmp/review-diff.patch
+
+          # 2. The spec. Whatever issue this PR closes — found in the PR body,
+          #    which is the one thing here we do read from the PR. If there is
+          #    no `Closes #n`, the Spec axis reports "no spec available"
+          #    rather than inventing one.
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/pr-body.md
+          issue=$(grep -oiE '(closes|fixes|resolves) #[0-9]+' /tmp/pr-body.md \
+            | head -n1 | grep -oE '[0-9]+' || true)
+          if [ -n "$issue" ]; then
+            gh issue view "$issue" --json number,title,body \
+              --jq '"# Ticket #" + (.number|tostring) + ": " + .title + "\n\n" + .body' \
+              > /tmp/review-spec.md
+          else
+            echo "No spec available: this PR does not say which ticket it closes." \
+              > /tmp/review-spec.md
+          fi
+          cat /tmp/review-spec.md
+
+          # 3. The files the diff touches. The standards themselves are
+          #    CODING_STANDARDS.md at the root of the checkout.
+          git diff --name-only "$BASE_SHA"...HEAD > /tmp/review-files.txt
+          cat /tmp/review-files.txt
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Review the pull request
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: npx tsx .sandcastle/agent-workflows/review/review.ts
+
+      - name: Post the verdict on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+        run: |
+          set -euo pipefail
+          [ -s /tmp/review-verdict.md ] || \
+            echo "The review run produced no verdict. See the logs." \
+              > /tmp/review-verdict.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Reviewed by the review workflow — [logs](${RUN_URL}). This run"
+            echo "saw the diff, the standards and the ticket, and nothing else."
+          } >> /tmp/review-verdict.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-verdict.md
