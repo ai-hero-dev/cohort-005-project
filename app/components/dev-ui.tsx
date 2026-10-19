@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, useLocation } from "react-router";
 import { Button } from "~/components/ui/button";
+import { FeedbackButton } from "~/components/feedback-button";
 import { cn } from "~/lib/utils";
 import type { UserRole } from "~/db/schema";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
@@ -186,6 +187,9 @@ export function DevUI({
             </div>
           )}
         </div>
+
+        {/* Files issues with your own gh login, so it never ships. */}
+        {import.meta.env.DEV && <FeedbackButton />}
       </div>
     </div>
   );
