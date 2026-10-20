@@ -37,18 +37,28 @@ name: Agent — Explore The Tickets
 #   run in front tells you which one you have, and it tells you in prose a
 #   human can read in thirty seconds instead of a diff they have to review.
 #
-# AND THEN IT STOPS
-#   The findings go on the issue as a comment, and the run ends there. You
-#   read the comment and make the call: label `agent:implement` to build it,
-#   or leave it. A plan the workflow cannot use is refused whole: nothing is
-#   written, the run goes red, and every issue in the batch is marked
-#   `agent:blocked`.
+# AND THEN IT BRANCHES ON ITS OWN ANSWER
+#   Every entry in the plan carries a `tag`, a closed enum in
+#   .sandcastle/agent-workflows/explore/plan-schema.ts, and the apply job
+#   branches on it:
+#
+#     easy-call       →  swap `agent:explore` for `agent:implement`, which is
+#                        the trigger for agent-implement.yml. The factory
+#                        keeps going without being asked.
+#     anything else   →  swap it for `needs-a-human` and stop. Somebody has
+#                        to come and look.
+#     a duplicate     →  closed, whatever its tag.
+#
+#   That is a real if/else in the apply job, on a value the agent chose. Not a
+#   sentence in a prompt asking it to be careful. And a plan with a tag the
+#   workflow does not recognise is refused whole: nothing is written, the run
+#   goes red, and every issue in the batch is marked `agent:blocked`.
 #
 # THE LABELS WHILE IT RUNS
 #   When the batch is listed, each issue swaps `agent:explore` for
-#   `agent:in-progress`. Apply takes `agent:in-progress` off once the issue
-#   has its comment. If the run fails, the `finish` job marks every issue
-#   still in progress `agent:blocked`; re-add `agent:explore` to retry.
+#   `agent:in-progress`. Apply swaps `agent:in-progress` for the issue's next
+#   label. If the run fails, the `finish` job marks every issue still in
+#   progress `agent:blocked`; re-add `agent:explore` to retry.
 #
 # THE AGENT
 #   A Sandcastle script: .sandcastle/agent-workflows/explore/explore.ts, with
@@ -59,7 +69,12 @@ name: Agent — Explore The Tickets
 #   secrets.FACTORY_PAT — a fine-grained personal access token on this
 #     repository. Every call this workflow makes to GitHub uses it: listing
 #     the batch, posting the findings, moving the labels, closing duplicates.
-#     The rest of the factory needs it anyway, so explore uses the same one.
+#     One hop is why it exists at all. A label applied with the built-in
+#     GITHUB_TOKEN does NOT start another workflow. GitHub suppresses that on
+#     purpose, so a workflow cannot trigger itself into a loop. The chain from
+#     explore to implement is exactly the loop we do want, so `agent:implement`
+#     has to go on with a token that is not the built-in one — and once that
+#     token is in the room, the factory uses it for everything.
 #   secrets.GITHUB_TOKEN — supplied by Actions, and used only to check the
 #     code out. Scoped per job below.
 #   The `agent:explore` label. A fresh clone of this repository does not have
@@ -234,6 +249,10 @@ jobs:
                  then "The plan needs exactly one entry for each of \($batch)."
                  else empty end),
 
+                # A tag the branch below knows.
+                ($plan[] | select(.tag | IN("easy-call", "needs-a-human", "blocked") | not)
+                 | "#\(.number) has a tag this workflow does not know: \(.tag)."),
+
                 # Something to post.
                 ($plan[] | select((.comment // "") | test("\\S") | not)
                  | "#\(.number) has an empty comment."),
@@ -253,10 +272,21 @@ jobs:
           fi
 
       - name: Apply the plan
+        # Every label below goes on with FACTORY_PAT, and that matters for
+        # `agent:implement`: a label applied by the built-in token does not
+        # fire `issues: labeled`, so agent-implement.yml would never wake up
+        # and the chain would end here, silently, with a green tick.
+        #
         # The findings comments are NOT tagged `<!-- factory:status -->`.
         # They are the one thing the implementer most needs to read.
         run: |
           set -euo pipefail
+          # A fresh clone of this repository does not have these labels yet.
+          gh label create "needs-a-human" --color D93F0B \
+            --description "The factory stopped here" || true
+          gh label create "agent:implement" --color 5319E7 \
+            --description "Hand this issue to the implementer agent" || true
+
           # nullglob: an issue with no screenshots gets no --attach.
           shopt -s nullglob
 
@@ -265,11 +295,14 @@ jobs:
           for n in $(jq -r '.issues | sort_by([.duplicate_of != null, .number]) | .[].number' /tmp/plan.json); do
             entry="$(jq -c --argjson n "$n" '.issues[] | select(.number == $n)' /tmp/plan.json)"
             dup="$(jq -r '.duplicate_of // empty' <<< "$entry")"
+            tag="$(jq -r '.tag' <<< "$entry")"
 
             if [ -n "$dup" ]; then
               next="Closed as duplicate of #$dup."
+            elif [ "$tag" = "easy-call" ]; then
+              next="Easy call. Handed to the implementer. Nobody is being asked first."
             else
-              next="Explored. Settle the open questions, then label \`agent:implement\` yourself."
+              next="Stopped at \`$tag\`. Settle the open questions, then label \`agent:implement\` yourself."
             fi
 
             jq -r '.comment' <<< "$entry" > /tmp/comment.md
@@ -280,12 +313,18 @@ jobs:
             for png in /tmp/evidence/"$n"-*.png; do attach+=(--attach "$png"); done
             gh issue comment "$n" --body-file /tmp/comment.md "${attach[@]}"
 
-            # `agent:in-progress` comes off: this issue is done, and the
-            # finish job leaves it alone.
-            gh issue edit "$n" --remove-label "agent:in-progress"
+            # The branch. Every path takes `agent:in-progress` off: this
+            # issue is done, and the finish job leaves it alone.
             if [ -n "$dup" ]; then
+              gh issue edit "$n" --remove-label "agent:in-progress"
               gh api --method PATCH "repos/$GH_REPO/issues/$n" \
                 -f state=closed -f state_reason=duplicate --silent
+            elif [ "$tag" = "easy-call" ]; then
+              gh issue edit "$n" \
+                --remove-label "agent:in-progress" --add-label "agent:implement"
+            else
+              gh issue edit "$n" \
+                --remove-label "agent:in-progress" --add-label "needs-a-human"
             fi
           done
 
