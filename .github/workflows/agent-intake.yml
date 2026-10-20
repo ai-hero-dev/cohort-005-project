@@ -1,0 +1,71 @@
+name: Agent — Take In Feedback
+
+# The front door of the software factory. It runs no agent.
+#
+# WHAT TRIGGERS IT
+#   An issue is opened. Most issues stop here: this workflow only takes in
+#   the ones the dev-only Send feedback button files.
+#
+# WHAT IT DOES
+#   It adds the `agent:explore` label, and nothing else. That label starts
+#   agent-explore.yml. Explore gives its verdict, an easy call goes on to the
+#   implementer, and the implementer hands its pull request to the reviewer.
+#   One click on Send feedback, and the next thing a human has to do is read
+#   a reviewed pull request.
+#
+# WHICH ISSUES IT TAKES — ALL THREE MUST HOLD
+#   1. A collaborator opened it. A public repository lets anyone open an
+#      issue, and an issue the factory takes in reaches an agent. A label
+#      added by hand was an approval only a collaborator could give. This
+#      check keeps that gate now that nobody adds the label by hand.
+#   2. It was opened with no labels. The factory files issues of its own:
+#      agent-implement-spec.yml opens each queue ticket with `spec:<n>` and
+#      `agent:queued` already on it. A labelled issue belongs to some other
+#      flow, so this workflow leaves it alone.
+#   3. Its body starts with the feedback button's line, `_Sent from the
+#      feedback button`. Any other issue a person files waits for a person
+#      to label it. A spec issue, for example, must not be explored and built
+#      as one ticket.
+#
+# WHY FACTORY_PAT
+#   A label added with the built-in GITHUB_TOKEN starts no workflow. GitHub
+#   suppresses that, so a workflow cannot trigger itself. This label exists
+#   only to start agent-explore.yml, so it goes on with FACTORY_PAT.
+#
+# THE LABEL LIFECYCLE
+#   This workflow does not touch `agent:in-progress` or `agent:blocked`.
+#   Explore moves them, exactly as when a person adds `agent:explore`. If this
+#   run fails, the issue just has no label. Add `agent:explore` by hand.
+#
+# WHAT IT NEEDS
+#   secrets.FACTORY_PAT — the factory's one token. Nothing else: there is no
+#   checkout, so the GITHUB_TOKEN gets no permissions at all.
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  intake:
+    if: >-
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+      && github.event.issue.labels[0] == null
+      && startsWith(github.event.issue.body, '_Sent from the feedback button')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ secrets.FACTORY_PAT }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+      - name: Hand the issue to explore
+        run: |
+          set -euo pipefail
+          # A fresh clone of this repository does not have the label yet.
+          gh label create "agent:explore" --color 5319E7 \
+            --description "The factory explores this ticket" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:explore"
