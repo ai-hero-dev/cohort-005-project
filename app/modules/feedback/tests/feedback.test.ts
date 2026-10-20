@@ -48,6 +48,8 @@ describe("fileIssue", () => {
           "My long note disappeared",
           "--body",
           "_Sent from the feedback button on `/courses/typescript/lessons/3`._\n\nI clicked Save and the note was gone.\n",
+          "--label",
+          "agent:explore",
         ],
       },
     ]);
