@@ -1,13 +1,18 @@
 import { z } from "zod/v4";
 
 // The plan the explore run hands back. The apply job in agent-explore.yml
-// checks the whole plan, then does what it says.
+// checks the whole plan, then does what it says, and it branches on `tag`.
 export const explorePlanSchema = z
   .strictObject({
     issues: z
       .array(
         z.strictObject({
           number: z.number().int().describe("The issue this entry is for."),
+          tag: z
+            .enum(["easy-call", "needs-a-human", "blocked"])
+            .describe(
+              "The call. A duplicate takes the tag of the issue it duplicates."
+            ),
           duplicate_of: z
             .number()
             .int()
