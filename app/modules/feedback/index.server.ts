@@ -13,7 +13,8 @@ export function createFeedback(deps: FeedbackDeps) {
     /**
      * Files the posted form (title, description, page) as an issue on
      * origin's GitHub repo with `gh issue create`, signed in as whoever ran
-     * `gh auth login`. Returns the new issue's URL. Throws 404 outside dev,
+     * `gh auth login`, with the `agent:explore` label that starts the
+     * factory. Returns the new issue's URL. Throws 404 outside dev,
      * 400 for an empty title or description, and 500 when origin is not on
      * GitHub.
      */
