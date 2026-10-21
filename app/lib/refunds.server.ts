@@ -216,7 +216,7 @@ function getRefundFigures(db: Queryable, purchase: Purchase): RefundFigures {
 const RULE_BREAK_ERRORS: Record<RuleBreak, string> = {
   window_closed: `The ${REFUND_WINDOW_DAYS}-day window has closed.`,
   watched_too_much:
-    "You have watched too much of this course to request a refund.",
+    "You have watched too much of this course to get a refund.",
   completed_too_much:
     "You have completed too much of this course to request a refund.",
   seat_claimed: "A Team Licence with a claimed Seat cannot be refunded.",
