@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "react", "jsx-a11y", "import", "vitest"],
-  "jsPlugins": ["./lint-rules/sql-raw.js"],
+  "jsPlugins": ["./lint-rules/sql-raw.js", "./lint-rules/input.js"],
   "categories": {
     "correctness": "error"
   },
@@ -86,7 +86,8 @@
     "import/no-default-export": "error",
     "vitest/no-disabled-tests": "error",
     "vitest/no-focused-tests": "error",
-    "sql/no-dynamic-raw": "error"
+    "sql/no-dynamic-raw": "error",
+    "input/no-number-coercion": "error"
   },
   "overrides": [
     {
@@ -118,6 +119,20 @@
       "files": ["request-logger/render.ts", "request-logger/render.test.ts"],
       "rules": {
         "typescript/no-explicit-any": "off"
+      }
+    },
+    // Files that already coerce request input with Number(). Remove each entry
+    // once its input goes through a zod schema.
+    {
+      "files": [
+        "app/routes/courses.$slug.$moduleId.tsx",
+        "app/routes/courses.$slug.lessons.$lessonId.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.quiz.tsx",
+        "app/routes/instructor.$courseId.lessons.$lessonId.tsx",
+        "app/routes/instructor.$courseId.modules.$moduleId.tsx"
+      ],
+      "rules": {
+        "input/no-number-coercion": "off"
       }
     },
     // Files already over a size limit. Remove each entry once the file is split.
