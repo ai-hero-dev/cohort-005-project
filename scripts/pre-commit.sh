@@ -17,6 +17,7 @@ run() {
 run lint-staged npx lint-staged --no-stash --no-hide-partially-staged
 run typecheck npm run --silent typecheck
 run boundaries npm run --silent lint:boundaries
+run modules npm run --silent lint:modules
 wait
 
 status=0
