@@ -132,6 +132,19 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Cache agent-browser's Chrome
+        uses: actions/cache@v4
+        with:
+          path: ~/.agent-browser/browsers
+          key: agent-browser-0.27.0-${{ runner.os }}
+
+      - name: Install agent-browser
+        # The agent drives the app with it for screenshots and checks. Without
+        # it here, each run installs it mid-session.
+        run: |
+          npm install -g agent-browser@0.27.0
+          agent-browser install
+
       - name: Migrate and seed the database
         # The agent gets a real database, because half of this repo's checks
         # need one. It is disposable: a fresh one, migrated and seeded, on
