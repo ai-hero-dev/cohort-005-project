@@ -25,9 +25,10 @@
     "loc": "git ls-files | grep -vE '(lock|.db|_snapshot.json)' | xargs wc -l",
     "lint:oxlint": "oxlint -c .oxlintrc.json",
     "lint:boundaries": "depcruise app --cache node_modules/.cache/dependency-cruiser",
+    "lint:modules": "node scripts/check-module-tests.js",
     "format": "biome format --write . && prettier --write \"**/*.md\"",
     "format:check": "biome format . && prettier --check \"**/*.md\"",
-    "check": "npm run format:check && npm run lint:oxlint && npm run typecheck && npm run lint:boundaries && npm run test",
+    "check": "npm run format:check && npm run lint:oxlint && npm run typecheck && npm run lint:boundaries && npm run lint:modules && npm run test",
     "prepare": "husky"
   },
   "dependencies": {
