@@ -87,7 +87,7 @@ jobs:
   review:
     if: github.event.label.name == 'agent:review'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       GH_REPO: ${{ github.repository }}
@@ -162,6 +162,19 @@ jobs:
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
+
+      - name: Cache agent-browser's Chrome
+        uses: actions/cache@v4
+        with:
+          path: ~/.agent-browser/browsers
+          key: agent-browser-0.27.0-${{ runner.os }}
+
+      - name: Install agent-browser
+        # The agent drives the app with it for screenshots and checks. Without
+        # it here, each run installs it mid-session.
+        run: |
+          npm install -g agent-browser@0.27.0
+          agent-browser install
 
       - name: Migrate and seed the database
         # The pre-commit hook runs on every commit the agent makes, and the
