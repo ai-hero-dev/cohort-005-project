@@ -64,3 +64,11 @@ The URL-safe name of a course, as in `/courses/:slug`.
 
 **Lapsed**:
 An Enrollment that is no longer active. Shown as a badge on the instructor's student roster.
+
+**Instructor**:
+Speaks for their own courses only. An Instructor builds and edits the courses they own, and sees the learners enrolled on them.
+_Avoid_: Teacher, Author, Creator
+
+**Watched**:
+Seconds of video a Learner has actually played in a course: the furthest point reached in each lesson, added up. Not lessons opened.
+_Avoid_: Viewed, Progress
