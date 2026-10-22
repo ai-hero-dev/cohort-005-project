@@ -1,0 +1,5 @@
+interface:
+  display_name: "Software Factory"
+  short_description: "Design a software factory: its tasks and services"
+policy:
+  allow_implicit_invocation: false
