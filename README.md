@@ -73,7 +73,7 @@ The app will be running at `http://localhost:5173`. Use the floating DevUI panel
 `npx ai-hero-cli fork` turns your clone into your own repo:
 
 - It replaces the folder's git history with a single fresh commit on `main`.
-- It creates a new **public** GitHub repo on your account and pushes to it as `origin`. (The prompt asks for a name for a "private" repo, but the repo it creates is public.)
+- It creates a new **public** GitHub repo on your account and pushes to it as `origin`.
 
 It needs to be public: GitHub Actions minutes are free on public repos, and the factory runs there. Your issues live on your repo too, so the agent's backlog is yours, never the course repo's.
 
@@ -111,7 +111,7 @@ The course works through this codebase in eight sections:
 5. **Codebase Design**: Shaping the codebase so agents can work in it.
 6. **Feedback Loops**: Automated checks that catch mistakes before you do.
 7. **Software Factory Part One**: Running your agent in GitHub Actions.
-8. **Software Factory Part Two**: Chaining the factory's agents together.
+8. **Software Factory Part Two**: Choosing the infrastructure your factory runs on, and designing the jobs you want it to do.
 
 ## Navigating Lessons
 
