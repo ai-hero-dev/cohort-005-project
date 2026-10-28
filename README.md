@@ -79,11 +79,9 @@ It needs to be public: GitHub Actions minutes are free on public repos, and the 
 
 ### Signing Up Later
 
-You don't need these yet, but you'll be asked for them along the way. All of them have a free option:
+You don't need these yet, but you'll be asked for them along the way. Both have a free option:
 
 - **[Knock](https://knock.app/)**, a free Developer account, when you build notifications. Its keys go in `.env`, which is gitignored.
-- **A GitHub fine-grained token and a Claude token**, when you set up the factory. These become repository secrets for GitHub Actions.
-- **[agent-browser](https://github.com/vercel-labs/agent-browser)**, a global install that gives your agent a browser to verify frontend changes.
 - **[tldraw](https://www.tldraw.com/)**, for whiteboarding your tasks. Any drawing app will do.
 
 ## Scripts
