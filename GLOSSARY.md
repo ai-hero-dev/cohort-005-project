@@ -17,7 +17,7 @@ _Avoid_: Registration, Subscription
 
 **Revoked Enrollment**:
 An Enrollment whose access has been taken away because its Purchase was refunded. Its progress is kept as a record, but it is never restored: a Learner who buys the Course again gets a new Enrollment and starts fresh.
-_Avoid_: Ended, Cancelled, Deleted, Unenrolled
+_Avoid_: Ended, Cancelled, Deleted, Unenrolled, Lapsed
 
 **Purchase**:
 A Learner's payment for one Course, recorded with the amount they actually paid.
@@ -32,38 +32,8 @@ A Cadence staff member who runs the platform, and the only person who approves o
 _Avoid_: Team admin (a Learner who manages a team's seats is not an Admin)
 
 **Watch Limit**:
-A Refund is only offered on a course with under two hours watched. Past that, the Learner has had the course, and the refund form turns them away.
+The amount of a Course a Learner can have Watched and still get a Refund. Past it, the Learner has had the course, and no Refund is offered.
 _Avoid_: Watch cap, Viewing threshold
-
-**Refunds table**:
-`refunds` — one row per Refund. Columns: `id`, `purchase_id`, `status` (`requested`, `approved`, `declined`), `reason`, `amount_refunded`, `requested_at`, `resolved_at`, `resolved_by_user_id`.
-
-**revoked_at**:
-Nullable text column on `enrollments`. An ISO timestamp, set when an approved Refund takes the course away. Access checks filter on `isNull(enrollments.revokedAt)`.
-
-**resolved_by_user_id**:
-Integer column on `refunds`, referencing `users.id`. Null until an Admin approves or declines the Refund.
-
-**RefundRow**:
-The component that draws one requested Refund on `/admin/refunds`, with its Approve and Decline buttons.
-
-**Button**:
-A clickable element that fires an action when the user presses it. Built on `~/components/ui/button`.
-
-**Component**:
-A React function that returns JSX.
-
-**cwd**:
-The directory the dev server was started from. Paths in `scripts/` resolve from here.
-
-**Loader**:
-The React Router function that fetches a route's data on the server before the page renders.
-
-**Slug**:
-The URL-safe name of a course, as in `/courses/:slug`.
-
-**Lapsed**:
-An Enrollment that is no longer active. Shown as a badge on the instructor's student roster.
 
 **Instructor**:
 Speaks for their own courses only. An Instructor builds and edits the courses they own, and sees the learners enrolled on them.
