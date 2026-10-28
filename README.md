@@ -73,17 +73,15 @@ The app will be running at `http://localhost:5173`. Use the floating DevUI panel
 `npx ai-hero-cli fork` turns your clone into your own repo:
 
 - It replaces the folder's git history with a single fresh commit on `main`.
-- It creates a new **public** GitHub repo on your account and pushes to it as `origin`. (The prompt asks for a name for a "private" repo, but the repo it creates is public.)
+- It creates a new **public** GitHub repo on your account and pushes to it as `origin`.
 
 It needs to be public: GitHub Actions minutes are free on public repos, and the factory runs there. Your issues live on your repo too, so the agent's backlog is yours, never the course repo's.
 
 ### Signing Up Later
 
-You don't need these yet, but you'll be asked for them along the way. All of them have a free option:
+You don't need these yet, but you'll be asked for them along the way. Both have a free option:
 
 - **[Knock](https://knock.app/)**, a free Developer account, when you build notifications. Its keys go in `.env`, which is gitignored.
-- **A GitHub fine-grained token and a Claude token**, when you set up the factory. These become repository secrets for GitHub Actions.
-- **[agent-browser](https://github.com/vercel-labs/agent-browser)**, a global install that gives your agent a browser to verify frontend changes.
 - **[tldraw](https://www.tldraw.com/)**, for whiteboarding your tasks. Any drawing app will do.
 
 ## Scripts
@@ -113,7 +111,7 @@ The course works through this codebase in eight sections:
 5. **Codebase Design**: Shaping the codebase so agents can work in it.
 6. **Feedback Loops**: Automated checks that catch mistakes before you do.
 7. **Software Factory Part One**: Running your agent in GitHub Actions.
-8. **Software Factory Part Two**: Chaining the factory's agents together.
+8. **Software Factory Part Two**: Choosing the infrastructure your factory runs on, and designing the jobs you want it to do.
 
 ## Navigating Lessons
 
