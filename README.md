@@ -25,7 +25,7 @@ This course is written for Opus-level models. Budget for it:
 
 - **$100/month is the practical minimum.** The Crash Course said a $20 plan was just enough; that advice doesn't hold here. You'll spend tokens freely while prototyping, and the factory adds its own usage on top.
 - **The factory runs Opus on your subscription.** The GitHub Actions workflows run Claude Code with a token generated from your own Claude subscription.
-- **Not using Claude?** Codex, OpenCode, Pi and other agents can't use a ChatGPT-style login inside CI. To run the factory with them, you'll need a provider API key, billed per token.
+- **Not using Claude?** Codex, OpenCode, Pi and other agents can't use a ChatGPT-style login inside CI. To run the factory with them, you'll need a provider API key, billed per token. GitHub Copilot is the exception: it runs on a Copilot plan, with a fine-grained personal access token that has the "Copilot Requests" permission, saved as the `COPILOT_GITHUB_TOKEN` secret. Its model is `claude-opus-5.5`, which needs Copilot Pro+, Max, Business or Enterprise; on another plan, pick a model your plan includes, such as `claude-sonnet-4.5`.
 
 ### Prerequisites
 
@@ -104,7 +104,7 @@ You don't need these yet, but you'll be asked for them along the way. Both have 
 
 The course works through this codebase in eight sections:
 
-1. **Before We Start**: Repo setup, choosing a model, the Discord, office hours, and how to take the course.
+1. **Before We Start**: Repo setup, choosing a model, the [Discord](https://www.aihero.dev/discord), office hours, and how to take the course.
 2. **Domain Language**: Giving you and your agent a shared vocabulary.
 3. **Wayfinder**: Charting a map of the work before you build it.
 4. **Review**: Reviewing what your agent produces.
