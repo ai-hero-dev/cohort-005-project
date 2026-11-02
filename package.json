@@ -71,7 +71,8 @@
     "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
     "msw@2.15.0": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
   },
   "overrides": {
     "dompurify": "3.4.17"
