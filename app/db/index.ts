@@ -10,11 +10,33 @@ let connection: Database.Database | undefined;
 
 export function getSqlite() {
   if (!connection) {
-    connection = new Database("data.db");
+    connection = openDatabase("data.db");
     connection.pragma("journal_mode = WAL");
     connection.pragma("foreign_keys = ON");
   }
   return connection;
+}
+
+// better-sqlite3 loads its native binding the first time a database opens.
+// If npm skipped its install script (ignore-scripts=true in your npm config),
+// the binding was never built and the raw error does not say why.
+function openDatabase(filename: string) {
+  try {
+    return new Database(filename);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Could not locate the bindings file")
+    ) {
+      throw new Error(
+        "better-sqlite3's native binding is missing. npm probably skipped its " +
+          "install script (check for ignore-scripts=true in your npm config). " +
+          "Rebuild it with: npm rebuild better-sqlite3 --ignore-scripts=false",
+        { cause: error }
+      );
+    }
+    throw error;
+  }
 }
 
 let instance: ReturnType<typeof drizzle<typeof schema>> | undefined;

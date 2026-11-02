@@ -64,16 +64,17 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.2.3"
+    "vitest": "^5.0.5"
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
     "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
     "msw@2.15.0": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
   },
   "overrides": {
-    "dompurify": "3.4.13"
+    "dompurify": "3.4.17"
   }
 }

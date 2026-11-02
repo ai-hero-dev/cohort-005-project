@@ -137,6 +137,16 @@ npm run db:seed     # if the seed data changed
 
 Your `.env` is gitignored, so it survives a reset.
 
+## Troubleshooting
+
+### "Could not locate the bindings file"
+
+better-sqlite3's native binding was never built. This usually means `ignore-scripts=true` is set in your own npm config, so `npm install` skipped its install script. Rebuild it:
+
+```bash
+npm rebuild better-sqlite3 --ignore-scripts=false
+```
+
 ## Tech Stack
 
 - **Framework:** [React Router](https://reactrouter.com/) v8 with SSR
